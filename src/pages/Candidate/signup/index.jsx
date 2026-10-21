@@ -429,7 +429,7 @@ useEffect(() => {
             maxWidth: 340,
           }}
         >
-          Create your profile and let our AI connect you with the right
+          Create your profile - discover relevant jobs, track applications, prepare for interviews, and manage offers all from one platform.
           opportunities.
         </Typography>
         <Box

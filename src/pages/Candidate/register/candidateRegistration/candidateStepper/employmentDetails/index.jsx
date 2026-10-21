@@ -179,6 +179,42 @@ const salaryBreakdownOptions = [
 ];
 
 const stockTypeOptions = ["ESOPs", "SARs", "RSUs"];
+
+/* ── Amount helpers — store raw digits, show Indian-style commas for ₹ ──── */
+const toDigits = (v) => String(v ?? "").replace(/[^\d]/g, "");
+const formatAmount = (value, currency) => {
+  const digits = toDigits(value);
+  if (!digits) return "";
+  return Number(digits).toLocaleString(currency === "₹" || !currency ? "en-IN" : "en-US");
+};
+
+/* Label shown above a field (Naukri-style compensation block) */
+const FieldLabel = ({ children }) => (
+  <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: INK, mb: 0.75 }}>
+    {children}
+  </Typography>
+);
+
+/* Read-only currency box next to Fixed / Variable / Stock amounts */
+const CurrencyBox = ({ currency }) => (
+  <Box
+    sx={{
+      width: 96,
+      height: 40,
+      flexShrink: 0,
+      border: `1px solid ${BORDER}`,
+      borderRadius: "10px",
+      background: "#fff",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: TEXT_MUTED,
+      fontSize: 14,
+    }}
+  >
+    {currency || "₹"}
+  </Box>
+);
 const parseNoticePeriod = (value) => {
   const map = {
     "Immediate joiner": 0,
@@ -436,7 +472,7 @@ const EmploymentDetailsPage = ({
     noticePeriodDays: "",
     is_relevant: "yes",
     relocate: null,
-    currency: "",
+    currency: "₹",
     previousEmployementType: "",
     previousCompany: "",
     previousJobTitle: "",
@@ -517,6 +553,9 @@ const EmploymentDetailsPage = ({
       ...prev,
       salaryBreakdown: selected,
 
+      // "Fixed" means the whole current salary is fixed — no separate split
+      fixedSalary: selected === "Fixed" || !selected ? "" : prev.fixedSalary,
+
       // Remove variable salary when Variable isn't selected
       variableSalary:
         selected === "Fixed + Variable" ||
@@ -567,38 +606,32 @@ const EmploymentDetailsPage = ({
     }
   };
 
+  // Only the top "Role & Company" section is mandatory (fields marked *)
   const validateForm = () => {
-    let tempErrors = {};
+    const tempErrors = {};
+    const isBlank = (v) => !String(v ?? "").trim();
+
     if (localData.is_current) {
-      if (!localData.employmentType)
-        tempErrors.employmentType = "Employment Type is required";
-      if (!localData.companyName)
-        tempErrors.companyName = "Company Name is required";
-      if (!localData.jobTitle) tempErrors.jobTitle = "Job Title is required";
-      if (!localData.noticePeriodDays)
-        tempErrors.noticePeriodDays = "Notice Period is required";
-      if (!localData.country) tempErrors.country = "Country is required";
-      if (!localData.location) tempErrors.location = "City is required";
-      if (!localData.relocate)
-        tempErrors.relocate = "Relocation field is required";
+      if (isBlank(localData.employmentType))
+        tempErrors.employmentType = "Employment type is required";
+      if (isBlank(localData.companyName))
+        tempErrors.companyName = "Current company name is required";
+      if (isBlank(localData.jobTitle))
+        tempErrors.jobTitle = "Job title is required";
     } else {
-      if (!localData.previousEmployementType)
-        tempErrors.previousEmployementType = "Employment Type is required";
-      if (!localData.previousCompany)
-        tempErrors.previousCompany = "Previous Company is required";
-      if (!localData.previousJobTitle)
-        tempErrors.previousJobTitle = "Previous Job Title is required";
-      if (!localData.previousJobProfile)
-        tempErrors.previousJobProfile = "Job Profile is required";
+      if (isBlank(localData.previousEmployementType))
+        tempErrors.previousEmployementType = "Employment type is required";
+      if (isBlank(localData.previousCompany))
+        tempErrors.previousCompany = "Previous company name is required";
+      if (isBlank(localData.previousJobTitle))
+        tempErrors.previousJobTitle = "Job title is required";
+      if (!localData.endDate) tempErrors.endDate = "End date is required";
     }
-    if (!localData.startDate) tempErrors.startDate = "Start Date is required";
-    if (!localData.is_current && !localData.endDate)
-      tempErrors.endDate = "End Date is required";
+    if (!localData.startDate) tempErrors.startDate = "Start date is required";
+
     setErrors(tempErrors);
     if (Object.keys(tempErrors).length > 0) {
-      toast.error(
-        `Please correct the following: ${Object.values(tempErrors).join(", ")}`,
-      );
+      toast.error("Please fill all the required fields marked with *");
     }
     return Object.keys(tempErrors).length === 0;
   };
@@ -624,12 +657,13 @@ const EmploymentDetailsPage = ({
     const endDate = localData.isEmployed === "yes" ? null : localData.endDate;
     return {
       is_current: localData.isEmployed === "yes",
-      employment_type:
-        localData.previousEmployementType || localData.employmentType,
+      employment_type: localData.is_current
+        ? localData.employmentType
+        : localData.previousEmployementType,
       total_exp_years: Number(localData.experienceYears) || 0,
       total_exp_months: Number(localData.experienceMonths) || 0,
-      company_name: localData.previousCompany || localData.companyName,
-      job_title: localData.previousJobTitle || localData.jobTitle,
+      company_name: localData.is_current ? localData.companyName : localData.previousCompany,
+      job_title: localData.is_current ? localData.jobTitle : localData.previousJobTitle,
       joining_date: localData.startDate
         ? format(localData.startDate, "dd/MM/yyyy")
         : null,
@@ -639,27 +673,33 @@ const EmploymentDetailsPage = ({
           : endDate && !isNaN(new Date(endDate).getTime())
             ? format(new Date(endDate), "dd/MM/yyyy")
             : null,
-      current_salary: Number(localData.currentSalary) || 0,
+      current_salary: Number(toDigits(localData.currentSalary)) || 0,
+      // No longer asked in the form — previously saved value is kept as-is
       expected_salary: Number(localData.expectedSalary) || 0,
-      fixed_salary: Number(localData.fixedSalary) || 0,
-      variable_salary: Number(localData.variableSalary) || 0,
+      // "Fixed" breakdown → the whole current salary is the fixed component
+      fixed_salary:
+        localData.salaryBreakdown === "Fixed"
+          ? Number(toDigits(localData.currentSalary)) || 0
+          : Number(toDigits(localData.fixedSalary)) || 0,
+      variable_salary: Number(toDigits(localData.variableSalary)) || 0,
       type_of_stocks: String(localData.typeOfStocks || ""),
-      value_of_stocks: Number(localData.valueOfStocks) || 0,
+      value_of_stocks: Number(toDigits(localData.valueOfStocks)) || 0,
       salary_breakdown: String(localData.salaryBreakdown || ""),
       skills_used: localData.itSkills,
-      job_profile: localData.previousJobProfile || localData.jobProfile,
+      job_profile: localData.is_current ? localData.jobProfile : localData.previousJobProfile,
       country: localData.country,
       location: localData.location,
       key_responsibilities: localData.key_responsibilities || "",
       notice_period_days: parseNoticePeriod(localData.noticePeriodDays),
       duration: computeDuration(localData.startDate, endDate),
       is_relevant: localData.is_relevant === "yes",
+      // No longer asked in the form — previously saved value is kept as-is
       willing_to_relocate: localData.relocate === "yes",
     };
   };
 
   const handleSaveAndNext = () => {
-    // if (!validateForm()) return;
+    if (!validateForm()) return;
     const payload = buildPayload();
 
     const save = async () => {
@@ -728,6 +768,145 @@ const EmploymentDetailsPage = ({
     localData.salaryBreakdown === "Fixed + Stocks" ||
     localData.salaryBreakdown === "Fixed + Variable + Stocks";
 
+  // Fixed salary is asked separately for every breakdown except plain "Fixed"
+  const hasFixedSplit =
+    !!localData.salaryBreakdown && localData.salaryBreakdown !== "Fixed";
+
+  /* Currency + amount row. The main salary row has a currency dropdown;
+     the others show the same currency in a read-only box. */
+  const renderAmountRow = ({ field, placeholder, selectableCurrency = false }) => (
+    <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
+      {selectableCurrency ? (
+        <Autocomplete
+          options={currencyOptions}
+          value={localData.currency || "₹"}
+          onChange={(_e, v) => setLocalData((prev) => ({ ...prev, currency: v || "₹" }))}
+          disableClearable
+          size="small"
+          slotProps={popupSlotProps}
+          sx={{ width: 96, flexShrink: 0 }}
+          renderInput={(params) => <TextField {...params} sx={fieldSx} />}
+        />
+      ) : (
+        <CurrencyBox currency={localData.currency} />
+      )}
+      <TextField
+        fullWidth
+        size="small"
+        placeholder={placeholder}
+        value={formatAmount(localData[field], localData.currency)}
+        onChange={(e) => {
+          const digits = toDigits(e.target.value);
+          setLocalData((prev) => ({ ...prev, [field]: digits }));
+          setErrors((prev) => ({ ...prev, [field]: "" }));
+        }}
+        inputProps={{ inputMode: "numeric" }}
+        error={!!errors[field]}
+        helperText={errors[field]}
+        sx={fieldSx}
+      />
+    </Box>
+  );
+
+  /* Naukri-style compensation block — used for current and previous role */
+  const renderCompensation = (salaryLabel) => (
+    <SectionPanel icon={PaidRoundedIcon} title="Compensation & Salary">
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 2.25 }}>
+        <Box>
+          <FieldLabel>{salaryLabel}</FieldLabel>
+          {renderAmountRow({
+            field: "currentSalary",
+            placeholder: "Eg. 3,25,000",
+            selectableCurrency: true,
+          })}
+        </Box>
+
+        <Box>
+          <FieldLabel>Salary breakdown</FieldLabel>
+          <Autocomplete
+            options={salaryBreakdownOptions}
+            value={localData.salaryBreakdown || null}
+            onChange={handleSalaryBreakdownChange}
+            size="small"
+            slotProps={popupSlotProps}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Select salary breakdown"
+                helperText={
+                  localData.salaryBreakdown === "Fixed"
+                    ? "Your total salary has been considered as fixed component"
+                    : ""
+                }
+                FormHelperTextProps={{ sx: { color: "#2e7d32" } }}
+                sx={fieldSx}
+              />
+            )}
+          />
+        </Box>
+
+        {hasFixedSplit && (
+          <Box>
+            <FieldLabel>Fixed salary</FieldLabel>
+            {renderAmountRow({ field: "fixedSalary", placeholder: "Eg. 26,000" })}
+          </Box>
+        )}
+
+        {hasVariableSalary && (
+          <Box>
+            <FieldLabel>Variable salary</FieldLabel>
+            {renderAmountRow({ field: "variableSalary", placeholder: "Eg. 45,765" })}
+          </Box>
+        )}
+
+        {hasStocks && (
+          <Box>
+            <FieldLabel>Type of stocks</FieldLabel>
+            <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              {stockTypeOptions.map((stock) => {
+                const selected = localData.typeOfStocks === stock;
+                return (
+                  <Box
+                    key={stock}
+                    onClick={() => {
+                      setLocalData((prev) => ({ ...prev, typeOfStocks: stock }));
+                      setErrors((prev) => ({ ...prev, typeOfStocks: "" }));
+                    }}
+                    sx={{
+                      cursor: "pointer",
+                      borderRadius: "20px",
+                      px: 2,
+                      py: 0.75,
+                      fontSize: "13.5px",
+                      fontWeight: selected ? 700 : 500,
+                      color: selected ? PRIMARY_DARK : TEXT_MUTED,
+                      border: `1px solid ${selected ? PRIMARY : BORDER}`,
+                      background: selected ? PRIMARY_TINT : "#fff",
+                      transition: "all .15s ease",
+                      "&:hover": { borderColor: PRIMARY },
+                    }}
+                  >
+                    {stock}
+                  </Box>
+                );
+              })}
+            </Box>
+          </Box>
+        )}
+
+        {hasStocks && (
+          <Box>
+            <FieldLabel>Value of stock benefits</FieldLabel>
+            {renderAmountRow({
+              field: "valueOfStocks",
+              placeholder: "Share total stock value you receive as part of your package",
+            })}
+          </Box>
+        )}
+      </Box>
+    </SectionPanel>
+  );
+
   // if (detailsLoading) {
   //   return (
   //     <StepPageLayout activeStep={activeStep} handleStepClick={handleStepClick}>
@@ -747,6 +926,9 @@ const EmploymentDetailsPage = ({
         </Typography>
         <Typography sx={{ fontSize: 13.5, color: TEXT_MUTED, mt: 0.4, lineHeight: 1.35 }}>
           Tell us about your current role so we can match you with the right openings.
+        </Typography>
+        <Typography sx={{ fontSize: 12, color: TEXT_MUTED, mt: 0.75 }}>
+          Fields marked with <Box component="span" sx={{ color: "#d32f2f" }}>*</Box> are required.
         </Typography>
       </Box>
 
@@ -791,6 +973,7 @@ const EmploymentDetailsPage = ({
                   renderInput={(params) => (
                     <TextField
                       {...params}
+                      required
                       label="Employment Type"
                       error={!!errors.employmentType}
                       helperText={errors.employmentType}
@@ -826,7 +1009,8 @@ const EmploymentDetailsPage = ({
                 <TextField
                   fullWidth
                   size="small"
-                  label="Company Name"
+                  required
+                  label="Current Company Name"
                   value={localData.companyName || ""}
                   onChange={handleInputChange("companyName")}
                   error={!!errors.companyName}
@@ -838,6 +1022,7 @@ const EmploymentDetailsPage = ({
                 <TextField
                   fullWidth
                   size="small"
+                  required
                   label="Job Title"
                   value={localData.jobTitle || ""}
                   onChange={handleInputChange("jobTitle")}
@@ -855,6 +1040,7 @@ const EmploymentDetailsPage = ({
                     onChange={handleDateChange("startDate")}
                     slotProps={{
                       textField: {
+                        required: true,
                         size: "small",
                         fullWidth: true,
                         error: !!errors.startDate,
@@ -876,6 +1062,7 @@ const EmploymentDetailsPage = ({
                       textField: {
                         size: "small",
                         fullWidth: true,
+                        helperText: "Present (current role)",
                         sx: fieldSx,
                       },
                     }}
@@ -886,7 +1073,7 @@ const EmploymentDetailsPage = ({
           </SectionPanel>
 
           {/* Location & Availability */}
-          <SectionPanel icon={PlaceRoundedIcon} title="Location & Availability">
+          <SectionPanel icon={PlaceRoundedIcon} title=" Current Location & Availability">
             <Grid container spacing={2}>
               <Grid item size={{ xs: 12, sm: 6 }}>
                 <Autocomplete
@@ -944,243 +1131,11 @@ const EmploymentDetailsPage = ({
                   )}
                 />
               </Grid>
-              <Grid item size={{ xs: 12, sm: 6 }}>
-                <YesNoToggle
-                  label="Willing to relocate?"
-                  name="relocate"
-                  value={localData.relocate}
-                  onChange={handleToggleChange("relocate")}
-                  error={errors.relocate}
-                />
-              </Grid>
             </Grid>
           </SectionPanel>
 
           {/* Compensation */}
-          <SectionPanel icon={PaidRoundedIcon} title="Compensation">
-            <Grid container spacing={2}>
-
-              {/* Currency */}
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <Autocomplete
-                  options={currencyOptions}
-                  value={localData.currency || ""}
-                  onChange={handleAutoCompleteChange("currency")}
-                  size="small"
-                  slotProps={popupSlotProps}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Currency"
-                      sx={fieldSx}
-                    />
-                  )}
-                />
-              </Grid>
-
-              {/* Current CTC */}
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Current CTC"
-                  value={localData.currentSalary || ""}
-                  onChange={handleInputChange("currentSalary")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-
-              {/* Expected Salary */}
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Expected Salary"
-                  value={localData.expectedSalary || ""}
-                  onChange={handleInputChange("expectedSalary")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-
-              {/* Salary Breakdown */}
-              <Grid item size={{ xs: 12 }}>
-                <Autocomplete
-                  options={salaryBreakdownOptions}
-                  value={localData.salaryBreakdown || ""}
-                  onChange={handleSalaryBreakdownChange}
-                  size="small"
-                  slotProps={popupSlotProps}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Salary Breakdown"
-                      placeholder="Select salary breakdown"
-                      sx={fieldSx}
-                    />
-                  )}
-                />
-              </Grid>
-
-              {/* Fixed Salary - show once breakdown is selected */}
-              {localData.salaryBreakdown && (
-                <Grid item size={{ xs: 12, sm: hasVariableSalary ? 6 : 12 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Fixed Salary"
-                    value={localData.fixedSalary || ""}
-                    onChange={handleInputChange("fixedSalary")}
-                    InputProps={{
-                      startAdornment: localData.currency ? (
-                        <InputAdornment position="start">
-                          {localData.currency}
-                        </InputAdornment>
-                      ) : null,
-                    }}
-                    sx={fieldSx}
-                  />
-                </Grid>
-              )}
-
-              {/* Variable Salary */}
-              {hasVariableSalary && (
-                <Grid item size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Variable Salary"
-                    value={localData.variableSalary || ""}
-                    onChange={handleInputChange("variableSalary")}
-                    InputProps={{
-                      startAdornment: localData.currency ? (
-                        <InputAdornment position="start">
-                          {localData.currency}
-                        </InputAdornment>
-                      ) : null,
-                    }}
-                    sx={fieldSx}
-                  />
-                </Grid>
-              )}
-
-              {/* Stock Type */}
-              {hasStocks && (
-                <Grid item size={{ xs: 12 }}>
-                  <Box>
-                    <Typography
-                      sx={{
-                        fontSize: "12.5px",
-                        color: TEXT_MUTED,
-                        mb: 0.8,
-                      }}
-                    >
-                      Type of Stocks
-                    </Typography>
-
-                    <Box
-                      sx={{
-                        display: "flex",
-                        gap: 1,
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      {stockTypeOptions.map((stock) => {
-                        const selected = localData.typeOfStocks === stock;
-
-                        return (
-                          <Button
-                            key={stock}
-                            type="button"
-                            variant="outlined"
-                            onClick={() => {
-                              setLocalData((prev) => ({
-                                ...prev,
-                                typeOfStocks: stock,
-                              }));
-
-                              setErrors((prev) => ({
-                                ...prev,
-                                typeOfStocks: "",
-                              }));
-                            }}
-                            sx={{
-                              minWidth: "80px",
-                              borderRadius: "20px",
-                              px: 2,
-                              py: 0.7,
-                              textTransform: "none",
-                              fontSize: "13.5px",
-                              fontWeight: selected ? 700 : 500,
-
-                              color: selected
-                                ? PRIMARY_DARK
-                                : TEXT_MUTED,
-
-                              borderColor: selected
-                                ? PRIMARY
-                                : BORDER,
-
-                              backgroundColor: selected
-                                ? PRIMARY_TINT
-                                : "#fff",
-
-                              "&:hover": {
-                                borderColor: PRIMARY,
-                                backgroundColor: PRIMARY_TINT,
-                              },
-                            }}
-                          >
-                            {stock}
-                          </Button>
-                        );
-                      })}
-                    </Box>
-                  </Box>
-                </Grid>
-              )}
-
-              {/* Stock Value */}
-              {hasStocks && (
-                <Grid item size={{ xs: 12 }}>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    type="number"
-                    label="Value of Stocks"
-                    value={localData.valueOfStocks || ""}
-                    onChange={handleInputChange("valueOfStocks")}
-                    InputProps={{
-                      startAdornment: localData.currency ? (
-                        <InputAdornment position="start">
-                          {localData.currency}
-                        </InputAdornment>
-                      ) : null,
-                    }}
-                    sx={fieldSx}
-                  />
-                </Grid>
-              )}
-
-            </Grid>
-          </SectionPanel>
+          {renderCompensation("Current salary")}
 
           {/* Skills & Profile */}
           <SectionPanel icon={ExtensionRoundedIcon} title="Skills & Profile">
@@ -1207,7 +1162,7 @@ const EmploymentDetailsPage = ({
                   )}
                 />
               </Grid>
-              <Grid item size={{ xs: 12 }}>
+              {/* <Grid item size={{ xs: 12 }}>
                 <TextField
                   fullWidth
                   size="small"
@@ -1216,7 +1171,7 @@ const EmploymentDetailsPage = ({
                   onChange={handleInputChange("jobProfile")}
                   sx={fieldSx}
                 />
-              </Grid>
+              </Grid> */}
               <Grid item size={{ xs: 12 }}>
                 <TextField
                   fullWidth
@@ -1247,6 +1202,7 @@ const EmploymentDetailsPage = ({
                   renderInput={(params) => (
                     <TextField
                       {...params}
+                      required
                       label="Employment Type"
                       error={!!errors.previousEmployementType}
                       helperText={errors.previousEmployementType}
@@ -1282,7 +1238,8 @@ const EmploymentDetailsPage = ({
                 <TextField
                   fullWidth
                   size="small"
-                  label="Company Name"
+                  required
+                  label="Previous Company Name"
                   value={localData.previousCompany || ""}
                   onChange={handleInputChange("previousCompany")}
                   error={!!errors.previousCompany}
@@ -1294,6 +1251,7 @@ const EmploymentDetailsPage = ({
                 <TextField
                   fullWidth
                   size="small"
+                  required
                   label="Job Title"
                   value={localData.previousJobTitle || ""}
                   onChange={handleInputChange("previousJobTitle")}
@@ -1311,6 +1269,7 @@ const EmploymentDetailsPage = ({
                     onChange={handleDateChange("startDate")}
                     slotProps={{
                       textField: {
+                        required: true,
                         size: "small",
                         fullWidth: true,
                         error: !!errors.startDate,
@@ -1327,8 +1286,10 @@ const EmploymentDetailsPage = ({
                     label="End Date"
                     value={localData.endDate || null}
                     onChange={handleDateChange("endDate")}
+                    minDate={localData.startDate || undefined}
                     slotProps={{
                       textField: {
+                        required: true,
                         size: "small",
                         fullWidth: true,
                         error: !!errors.endDate,
@@ -1342,7 +1303,7 @@ const EmploymentDetailsPage = ({
             </Grid>
           </SectionPanel>
 
-          <SectionPanel icon={PlaceRoundedIcon} title="Location">
+          <SectionPanel icon={PlaceRoundedIcon} title="Previous Company Location ">
             <Grid container spacing={2}>
               <Grid item size={{ xs: 12, sm: 6 }}>
                 <Autocomplete
@@ -1382,151 +1343,10 @@ const EmploymentDetailsPage = ({
                   )}
                 />
               </Grid>
-              <Grid item size={{ xs: 12 }}>
-                <YesNoToggle
-                  label="Willing to relocate?"
-                  name="relocate"
-                  value={localData.relocate}
-                  onChange={handleToggleChange("relocate")}
-                  error={errors.relocate}
-                />
-              </Grid>
             </Grid>
           </SectionPanel>
 
-          <SectionPanel icon={PaidRoundedIcon} title="Compensation">
-            <Grid container spacing={2}>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <Autocomplete
-                  options={currencyOptions}
-                  value={localData.currency || ""}
-                  onChange={handleAutoCompleteChange("currency")}
-                  size="small"
-                  slotProps={popupSlotProps}
-                  renderInput={(params) => (
-                    <TextField {...params} label="Currency" sx={fieldSx} />
-                  )}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Current CTC"
-                  value={localData.currentSalary || ""}
-                  onChange={handleInputChange("currentSalary")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Expected CTC / Salary Breakdown"
-                  value={localData.salaryBreakdown || ""}
-                  onChange={handleInputChange("salaryBreakdown")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Expected Salary"
-                  value={localData.expectedSalary || ""}
-                  onChange={handleInputChange("expectedSalary")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Fixed Salary"
-                  value={localData.fixedSalary || ""}
-                  onChange={handleInputChange("fixedSalary")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Variable Salary"
-                  value={localData.variableSalary || ""}
-                  onChange={handleInputChange("variableSalary")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Type of Stocks"
-                  value={localData.typeOfStocks || ""}
-                  onChange={handleInputChange("typeOfStocks")}
-                  sx={fieldSx}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 4 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="number"
-                  label="Value of Stocks"
-                  value={localData.valueOfStocks || ""}
-                  onChange={handleInputChange("valueOfStocks")}
-                  InputProps={{
-                    startAdornment: localData.currency ? (
-                      <InputAdornment position="start">
-                        {localData.currency}
-                      </InputAdornment>
-                    ) : null,
-                  }}
-                  sx={fieldSx}
-                />
-              </Grid>
-            </Grid>
-          </SectionPanel>
+          {renderCompensation("Last drawn salary")}
 
           <SectionPanel icon={ExtensionRoundedIcon} title="Skills & Profile">
             <Grid container spacing={2}>
@@ -1559,10 +1379,8 @@ const EmploymentDetailsPage = ({
                   label="Key Responsibilities"
                   multiline
                   minRows={3}
-                  value={localData.previousJobProfile || ""}
-                  onChange={handleInputChange("previousJobProfile")}
-                  error={!!errors.previousJobProfile}
-                  helperText={errors.previousJobProfile}
+                  value={localData.key_responsibilities || ""}
+                  onChange={handleInputChange("key_responsibilities")}
                   sx={fieldSx}
                 />
               </Grid>

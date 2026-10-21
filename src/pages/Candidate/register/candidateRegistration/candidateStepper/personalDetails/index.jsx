@@ -478,6 +478,7 @@ const PersonalDetails = ({ handleBack, activeStep, handleStepClick }) => {
   const [sameAsCurrent, setSameAsCurrent] = useState(false);
   const [countries, setCountries] = useState([]);
   const [stateAndCityOptions, setStateAndCityOptions] = useState([]);
+  const [permanentStateOptions, setPermanentStateOptions] = useState([]);
   const [workAuthorizationOptions, setWorkAuthorizationOptions] = useState([]);
   const [selectedCountry, setSelectedCountry] = useState(null);
   const [selectedStateAndCity, setSelectedStateAndCity] = useState(null);
@@ -502,6 +503,10 @@ const PersonalDetails = ({ handleBack, activeStep, handleStepClick }) => {
     stateAndCity: "",
     workAuthorization: "",
     pinCode: "",
+    // Permanent address location (shown under Permanent Address)
+    permanentCountry: "",
+    permanentStateAndCity: "",
+    permanentPinCode: "",
     willingToRelocate: false,
     ...EXTRA_FIELD_DEFAULTS,
   });
@@ -567,6 +572,9 @@ useEffect(() => {
     stateAndCity: pd.city || pd.state || "",
     workAuthorization: pd.work_authorization || "",
     pinCode: pd.pincode || "",
+    permanentCountry: pd.permanent_country || "",
+    permanentStateAndCity: pd.permanent_city || pd.permanent_state || "",
+    permanentPinCode: pd.permanent_pincode || "",
     willingToRelocate: !!pd.willing_to_relocate,
     ...mapExtraFieldsFromApi(pd),
   }));
@@ -630,15 +638,69 @@ useEffect(() => {
     setLocalData((prev) => ({ ...prev, [key]: event.target.checked }));
   };
 
+  // "Same as current address" copies the address AND its country / state & city / pincode
   const handleSameAsCurrent = (event) => {
     const isChecked = event.target.checked;
     setSameAsCurrent(isChecked);
     setLocalData((prev) => ({
       ...prev,
       permanentAddress: isChecked ? prev.currentAddress : "",
+      permanentCountry: isChecked ? prev.country : "",
+      permanentStateAndCity: isChecked ? prev.stateAndCity : "",
+      permanentPinCode: isChecked ? prev.pinCode : "",
     }));
     if (isChecked) setErrors((prev) => ({ ...prev, permanentAddress: "" }));
   };
+
+  // While "Same as current address" is ticked, keep the permanent block in sync
+  useEffect(() => {
+    if (!sameAsCurrent) return;
+    setLocalData((prev) =>
+      prev.permanentAddress === prev.currentAddress &&
+      prev.permanentCountry === prev.country &&
+      prev.permanentStateAndCity === prev.stateAndCity &&
+      prev.permanentPinCode === prev.pinCode
+        ? prev
+        : {
+            ...prev,
+            permanentAddress: prev.currentAddress,
+            permanentCountry: prev.country,
+            permanentStateAndCity: prev.stateAndCity,
+            permanentPinCode: prev.pinCode,
+          }
+    );
+  }, [sameAsCurrent, localData.currentAddress, localData.country, localData.stateAndCity, localData.pinCode]);
+
+  const loadLocations = async (country, setOptions) => {
+    if (!country) {
+      setOptions([]);
+      return;
+    }
+    try {
+      const response = await triggerGetLocations(country).unwrap();
+      setOptions(Array.isArray(response) ? response : response?.data ?? []);
+    } catch (error) {
+      console.error("Error fetching states/cities:", error);
+      setOptions([]);
+    }
+  };
+
+  const handleSelectPermanentCountry = (country) => {
+    setLocalData((prev) => ({
+      ...prev,
+      permanentCountry: country || "",
+      permanentStateAndCity: "",
+    }));
+    loadLocations(country, setPermanentStateOptions);
+  };
+
+  // Load the permanent state & city list for a saved / autofilled country
+  useEffect(() => {
+    if (localData.permanentCountry && !permanentStateOptions.length) {
+      loadLocations(localData.permanentCountry, setPermanentStateOptions);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localData.permanentCountry]);
 
   const handleSelectCountry = async (country) => {
     setSelectedCountry(country);
@@ -688,8 +750,6 @@ useEffect(() => {
     if (!localData.permanentAddress)
       tempErrors.permanentAddress = "Permanent Address is required";
     if (!localData.country) tempErrors.country = "Country is required";
-    if (isUnitedStates && !localData.workAuthorization)
-      tempErrors.workAuthorization = "Work authorization is required";
     if (!localData.stateAndCity)
       tempErrors.stateAndCity = "State & City is required";
     if (!localData.pinCode) tempErrors.pinCode = "Pincode is required";
@@ -754,6 +814,11 @@ useEffect(() => {
       country: localData.country,
       work_authorization: isUnitedStates ? localData.workAuthorization : "",
       pincode: localData.pinCode,
+      // Permanent address location — new keys, backend must accept them
+      permanent_country: localData.permanentCountry || null,
+      permanent_state: localData.permanentStateAndCity || null,
+      permanent_city: localData.permanentStateAndCity || null,
+      permanent_pincode: localData.permanentPinCode || null,
       willing_to_relocate: localData.willingToRelocate,
       // Extra fields — common ones for everyone, US-only ones only for US
       ...mapCommonExtraFieldsToPayload(cleanData),
@@ -874,9 +939,10 @@ useEffect(() => {
         </Grid>
       </SectionPanel>
 
-      {/* Address */}
+      {/* Address — current address + its location, then permanent address + its location */}
       <SectionPanel icon={HomeRoundedIcon} title="Address">
         <Grid container spacing={2}>
+          {/* Current address */}
           <Grid item size={{ xs: 12 }}>
             <TextField
               fullWidth
@@ -889,41 +955,6 @@ useEffect(() => {
               sx={fieldSx}
             />
           </Grid>
-          <Grid item size={{ xs: 12 }} sx={{ mt: -1.2 }}>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={sameAsCurrent}
-                  onChange={handleSameAsCurrent}
-                  size="small"
-                  sx={checkboxSx}
-                />
-              }
-              label={
-                <Typography sx={{ fontSize: "13px", color: "#4B5563" }}>
-                  Same as current address
-                </Typography>
-              }
-            />
-          </Grid>
-          <Grid item size={{ xs: 12 }}>
-            <TextField
-              fullWidth
-              size="small"
-              label="Permanent Address"
-              value={localData.permanentAddress || ""}
-              onChange={handleChange("permanentAddress")}
-              error={!!errors.permanentAddress}
-              helperText={errors.permanentAddress}
-              sx={fieldSx}
-            />
-          </Grid>
-        </Grid>
-      </SectionPanel>
-
-      {/* Location */}
-      <SectionPanel icon={PlaceRoundedIcon} title="Location">
-        <Grid container spacing={2}>
           <Grid item size={{ xs: 12, sm: 4 }}>
             <Autocomplete
               freeSolo
@@ -980,37 +1011,81 @@ useEffect(() => {
               sx={fieldSx}
             />
           </Grid>
-          {isUnitedStates && (
-            <Grid item size={{ xs: 12, sm: 4 }}>
-              <Autocomplete
-                options={workAuthorizationOptions}
-                loading={isWorkAuthorizationsLoading}
-                value={workAuthorizationOptions.find(
-                  (option) => option.value === localData.workAuthorization
-                ) || null}
-                onChange={(_e, option) => {
-                  setLocalData((prev) => ({
-                    ...prev,
-                    workAuthorization: option?.value || "",
-                  }));
-                  setErrors((prev) => ({ ...prev, workAuthorization: "" }));
-                }}
-                getOptionLabel={(option) => option?.value || ""}
-                isOptionEqualToValue={(option, value) => option?.id === value?.id}
-                size="small"
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Work Authorization"
-                    error={!!errors.workAuthorization}
-                    helperText={errors.workAuthorization}
-                    sx={fieldSx}
-                  />
-                )}
-              />
-            </Grid>
-          )}
+
+          {/* Same as current — sits right above the permanent address */}
           <Grid item size={{ xs: 12 }} sx={{ mt: -0.5 }}>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={sameAsCurrent}
+                  onChange={handleSameAsCurrent}
+                  size="small"
+                  sx={checkboxSx}
+                />
+              }
+              label={
+                <Typography sx={{ fontSize: "13px", color: "#4B5563" }}>
+                  Same as current address
+                </Typography>
+              }
+            />
+          </Grid>
+
+          {/* Permanent address */}
+          <Grid item size={{ xs: 12 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Permanent Address"
+              value={localData.permanentAddress || ""}
+              onChange={handleChange("permanentAddress")}
+              disabled={sameAsCurrent}
+              error={!!errors.permanentAddress}
+              helperText={errors.permanentAddress}
+              sx={fieldSx}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12, sm: 4 }}>
+            <Autocomplete
+              freeSolo
+              options={countries}
+              disabled={sameAsCurrent}
+              value={localData.permanentCountry || ""}
+              onChange={(_e, value) => handleSelectPermanentCountry(value)}
+              size="small"
+              renderInput={(params) => (
+                <TextField {...params} label="Country" sx={fieldSx} />
+              )}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12, sm: 4 }}>
+            <Autocomplete
+              freeSolo
+              options={sameAsCurrent ? stateAndCityOptions : permanentStateOptions}
+              disabled={sameAsCurrent || !localData.permanentCountry}
+              value={localData.permanentStateAndCity || ""}
+              onChange={(_e, value) =>
+                setLocalData((prev) => ({ ...prev, permanentStateAndCity: value || "" }))
+              }
+              size="small"
+              renderInput={(params) => (
+                <TextField {...params} label="State & City" sx={fieldSx} />
+              )}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12, sm: 4 }}>
+            <TextField
+              fullWidth
+              size="small"
+              label="Pincode"
+              disabled={sameAsCurrent}
+              value={localData.permanentPinCode || ""}
+              onChange={handleChange("permanentPinCode")}
+              sx={fieldSx}
+            />
+          </Grid>
+
+          {/* <Grid item size={{ xs: 12 }} sx={{ mt: -0.5 }}>
             <FormControlLabel
               control={
                 <Checkbox
@@ -1026,7 +1101,7 @@ useEffect(() => {
                 </Typography>
               }
             />
-          </Grid>
+          </Grid> */}
         </Grid>
       </SectionPanel>
 
@@ -1038,15 +1113,6 @@ useEffect(() => {
             <Grid container spacing={2}>
               <Grid item size={{ xs: 12, sm: 6 }}>
                 <MultiSelectField
-                  label="Preferred Contact Methods"
-                  options={dd.contactMethods}
-                  loading={ddLoading}
-                  value={localData.preferredContactMethods}
-                  onChange={handleValue("preferredContactMethods")}
-                />
-              </Grid>
-              <Grid item size={{ xs: 12, sm: 6 }}>
-                <MultiSelectField
                   label="Preferred Employment Types"
                   options={dd.employmentTypes}
                   loading={ddLoading}
@@ -1056,7 +1122,7 @@ useEffect(() => {
               </Grid>
               <Grid item size={{ xs: 12, sm: 6 }}>
                 <MultiSelectField
-                  label="Preferred Engagement Types"
+                  label="Preferred Payroll Types"
                   options={dd.engagementTypes}
                   loading={ddLoading}
                   value={localData.preferredEngagementTypes}
@@ -1072,6 +1138,18 @@ useEffect(() => {
                   onChange={handleValue("preferredWorkArrangements")}
                 />
               </Grid>
+              <Grid item size={{ xs: 12, sm: 6 }}>
+                <MultiSelectField
+                  label="Preferred Contact Methods"
+                  options={dd.contactMethods}
+                  loading={ddLoading}
+                  value={localData.preferredContactMethods}
+                  onChange={handleValue("preferredContactMethods")}
+                />
+              </Grid>
+              
+              
+              
             </Grid>
           </SectionPanel>
 
@@ -1113,7 +1191,7 @@ useEffect(() => {
           </SectionPanel>
 
           {/* Compensation & Benefits */}
-          <SectionPanel icon={PaymentsRoundedIcon} title="Compensation & Benefits" tag="US">
+          <SectionPanel icon={PaymentsRoundedIcon} title="Compensation & Benefits Preference" tag="US">
             <Grid container spacing={2}>
               <Grid item size={{ xs: 12, sm: 6 }}>
                 <SelectField
@@ -1149,6 +1227,57 @@ useEffect(() => {
 
       {/* ══════════════ Extra details for every country (all optional) ══════════════ */}
 
+      {/* Job Preferences */}
+      <SectionPanel icon={WorkOutlineRoundedIcon} title="Job Preferences">
+        <Grid container spacing={2}>
+          <Grid item size={{ xs: 12, sm: 6 }}>
+            <MultiSelectField
+              label="Preferred Job Categories"
+              options={dd.jobCategories}
+              loading={ddLoading}
+              value={localData.preferredJobCategories}
+              onChange={handleValue("preferredJobCategories")}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12, sm: 6 }}>
+            <MultiSelectField
+              label="Preferred Seniority Levels"
+              options={dd.seniorityLevels}
+              loading={ddLoading}
+              value={localData.preferredSeniorityLevels}
+              onChange={handleValue("preferredSeniorityLevels")}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12, sm: 6 }}>
+            <MultiSelectField
+              label="Preferred Company Types"
+              options={dd.companyTypes}
+              loading={ddLoading}
+              value={localData.preferredCompanyTypes}
+              onChange={handleValue("preferredCompanyTypes")}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12, sm: 6 }}>
+            <MultiSelectField
+              label="Most Important Opportunity Factors"
+              options={dd.opportunityFactors}
+              loading={ddLoading}
+              value={localData.mostImportantOpportunityFactors}
+              onChange={handleValue("mostImportantOpportunityFactors")}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12 }}>
+            <SelectField
+              label="Location Preference"
+              options={dd.locationPreferences}
+              loading={ddLoading}
+              value={localData.locationPreference}
+              onChange={handleValue("locationPreference")}
+            />
+          </Grid>
+        </Grid>
+      </SectionPanel>
+      
       {/* Availability & Interviews */}
       <SectionPanel icon={EventAvailableRoundedIcon} title="Availability & Interviews">
         <Grid container spacing={2}>
@@ -1230,56 +1359,7 @@ useEffect(() => {
         </Grid>
       </SectionPanel>
 
-      {/* Job Preferences */}
-      <SectionPanel icon={WorkOutlineRoundedIcon} title="Job Preferences">
-        <Grid container spacing={2}>
-          <Grid item size={{ xs: 12, sm: 6 }}>
-            <MultiSelectField
-              label="Preferred Job Categories"
-              options={dd.jobCategories}
-              loading={ddLoading}
-              value={localData.preferredJobCategories}
-              onChange={handleValue("preferredJobCategories")}
-            />
-          </Grid>
-          <Grid item size={{ xs: 12, sm: 6 }}>
-            <MultiSelectField
-              label="Preferred Seniority Levels"
-              options={dd.seniorityLevels}
-              loading={ddLoading}
-              value={localData.preferredSeniorityLevels}
-              onChange={handleValue("preferredSeniorityLevels")}
-            />
-          </Grid>
-          <Grid item size={{ xs: 12, sm: 6 }}>
-            <MultiSelectField
-              label="Preferred Company Types"
-              options={dd.companyTypes}
-              loading={ddLoading}
-              value={localData.preferredCompanyTypes}
-              onChange={handleValue("preferredCompanyTypes")}
-            />
-          </Grid>
-          <Grid item size={{ xs: 12, sm: 6 }}>
-            <MultiSelectField
-              label="Most Important Opportunity Factors"
-              options={dd.opportunityFactors}
-              loading={ddLoading}
-              value={localData.mostImportantOpportunityFactors}
-              onChange={handleValue("mostImportantOpportunityFactors")}
-            />
-          </Grid>
-          <Grid item size={{ xs: 12 }}>
-            <SelectField
-              label="Location Preference"
-              options={dd.locationPreferences}
-              loading={ddLoading}
-              value={localData.locationPreference}
-              onChange={handleValue("locationPreference")}
-            />
-          </Grid>
-        </Grid>
-      </SectionPanel>
+      
 
       {/* Referral & Profile */}
       <SectionPanel icon={LinkRoundedIcon} title="Referral & Profile">

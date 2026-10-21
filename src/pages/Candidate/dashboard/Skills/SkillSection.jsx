@@ -11,20 +11,41 @@ import {
   TextField,
   Button,
   List,
-  ListItem,
+  ListItemButton,
   ListItemText,
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
 import EditIcon from "@mui/icons-material/Edit";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import { GridCloseIcon } from "@mui/x-data-grid";
 import { AppContext } from "../../../../AppContext";
 import candidateApi from "../../../../services/candidateApi";
 import {
   useGetCandidateKeySkillsQuery,
 } from "../../../../store/api/settings/CandidatePortalApis";
+import { palette, fonts } from "../../../../theme/candidateTokens";
 
 const ACCENT = "#2B6F71";
 const ACCENT_HOVER = "#1F5557";
+
+const dialogFieldSx = {
+  "& .MuiOutlinedInput-root": {
+    "& fieldset": { borderColor: palette.line },
+    "&:hover fieldset": { borderColor: palette.teal },
+    "&.Mui-focused fieldset": { borderColor: palette.teal },
+  },
+  "& .MuiInputLabel-root.Mui-focused": { color: palette.teal },
+};
+
+/* Same small heading used in the Personal Details dialog */
+const GroupHeading = ({ icon: Icon, title }) => (
+  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
+    <Icon sx={{ fontSize: 17, color: palette.teal }} />
+    <Typography sx={{ fontFamily: fonts.display, fontWeight: 600, fontSize: 14, color: palette.ink }}>
+      {title}
+    </Typography>
+  </Box>
+);
 
 function SkillsSection({ keySkillInfo, completeDetailsApi }) {
   const { formData = {}, setFormData } = useContext(AppContext);
@@ -96,7 +117,7 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
   const handleAddClick = () => {
     setCurrentSkill("");
     setEditIndex(null);
-    setSuggestions(availableSkills);
+    setSuggestions(getSuggestions("", false));
     setOpenDialog(true);
     setError(null);
   };
@@ -184,30 +205,57 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
     }
   };
 
+  // Suggestions that aren't already typed in the box or saved on the profile
+  const getSuggestions = (input, editing = editIndex !== null) => {
+    const parts = input.split(",").map((skill) => skill.trim().toLowerCase());
+    const lastSkill = parts[parts.length - 1] || "";
+    const taken = new Set([
+      ...parts.slice(0, -1).filter(Boolean),
+      ...(editing ? [] : skills.map((skill) => skill.toLowerCase())),
+    ]);
+    return availableSkills.filter(
+      (skill) =>
+        !taken.has(skill.toLowerCase()) &&
+        (!lastSkill || skill.toLowerCase().includes(lastSkill))
+    );
+  };
+
   const handleInputChange = (e) => {
     const input = e.target.value;
     setCurrentSkill(input);
+    setSuggestions(getSuggestions(input));
+  };
 
-    const lastSkill = input.split(",").pop().trim();
-    if (lastSkill === "") {
-      setSuggestions(availableSkills);
-    } else {
-      const filteredSuggestions = availableSkills.filter((skill) =>
-        skill.toLowerCase().includes(lastSkill.toLowerCase())
-      );
-      setSuggestions(filteredSuggestions);
-    }
+  // Skills typed so far in "Add" mode, shown as removable chips
+  const pendingSkills = [
+    ...new Set(
+      currentSkill
+        .split(",")
+        .map((skill) => skill.trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  const handleRemovePending = (skillToRemove) => {
+    const remaining = pendingSkills.filter((skill) => skill !== skillToRemove);
+    const next = remaining.length ? remaining.join(", ") + ", " : "";
+    setCurrentSkill(next);
+    setSuggestions(getSuggestions(next));
   };
 
   const handleSuggestionClick = (suggestion) => {
     if (editIndex !== null) {
+      // Edit mode holds one skill — pick it and close the list
       setCurrentSkill(suggestion);
-    } else {
-      const skillsArray = currentSkill.split(",").map((skill) => skill.trim());
-      skillsArray[skillsArray.length - 1] = suggestion;
-      setCurrentSkill(skillsArray.join(", ") + ", ");
+      setSuggestions([]);
+      return;
     }
-    setSuggestions([]);
+    // Add mode: keep the list open so more skills can be picked
+    const skillsArray = currentSkill.split(",").map((skill) => skill.trim());
+    skillsArray[skillsArray.length - 1] = suggestion;
+    const next = skillsArray.filter(Boolean).join(", ") + ", ";
+    setCurrentSkill(next);
+    setSuggestions(getSuggestions(next));
   };
 
   return (
@@ -303,105 +351,116 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
         onClose={() => setOpenDialog(false)}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: "20px",
-            overflow: "hidden",
-            boxShadow: "0px 12px 40px rgba(0,0,0,0.15)",
-          },
-        }}
+        PaperProps={{ sx: { borderRadius: "14px" } }}
       >
-        <DialogTitle
-          sx={{
-            background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_HOVER})`,
-            color: "#fff",
-            py: 2.5,
-            px: 3,
-            fontWeight: 600,
-            position: "relative",
-          }}
-        >
+        <DialogTitle sx={{ fontFamily: fonts.display, fontWeight: 600, color: palette.ink }}>
           {editIndex !== null ? "Edit Skill" : "Add Skills"}
           <IconButton
             onClick={() => setOpenDialog(false)}
-            sx={{ position: "absolute", right: 12, top: 12, color: "#fff" }}
+            sx={{ position: "absolute", right: 8, top: 8, color: palette.teal }}
           >
-            <GridCloseIcon />
+            <CloseIcon />
           </IconButton>
         </DialogTitle>
-        <DialogContent sx={{ p: 3, paddingTop: 4 }}>
+
+        <DialogContent dividers>
+          {error && (
+            <Typography sx={{ color: palette.coral, mb: 1.5, display: "block" }} variant="caption">
+              {error}
+            </Typography>
+          )}
+
+          <GroupHeading icon={PsychologyOutlinedIcon} title="Key Skills" />
+
           <TextField
             fullWidth
+            size="small"
             label={editIndex !== null ? "Skill" : "Skills (comma-separated)"}
             value={currentSkill}
             onChange={handleInputChange}
             autoFocus
-            margin="dense"
             helperText={
-              editIndex === null
-                ? "Enter multiple skills separated by commas"
-                : ""
+              editIndex === null ? "Enter multiple skills separated by commas" : ""
             }
-            sx={{
-              "& .MuiOutlinedInput-root": {
-                borderRadius: "12px",
-                backgroundColor: "#fafafa",
-              },
-              "& .MuiInputLabel-root": {
-                backgroundColor: "#fff",
-                px: 0.5,
-              },
-            }}
+            FormHelperTextProps={{ sx: { color: palette.muted, ml: 0 } }}
+            sx={dialogFieldSx}
           />
+
+          {/* Skills being added — click X to remove before saving */}
+          {editIndex === null && pendingSkills.length > 0 && (
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.75, mt: 1.5 }}>
+              {pendingSkills.map((skill) => (
+                <Chip
+                  key={skill}
+                  label={skill}
+                  size="small"
+                  onDelete={() => handleRemovePending(skill)}
+                  sx={{
+                    bgcolor: palette.tealSoft,
+                    color: palette.teal,
+                    fontWeight: 600,
+                    fontSize: 12.5,
+                    "& .MuiChip-deleteIcon": {
+                      color: palette.teal,
+                      "&:hover": { color: palette.tealDeep },
+                    },
+                  }}
+                />
+              ))}
+            </Box>
+          )}
+
           {suggestions.length > 0 && (
-            <Box
-              sx={{
-                maxHeight: 200,
-                overflowY: "auto",
-                border: "1px solid #e0e0e0",
-                borderRadius: "12px",
-                mt: 1,
-                bgcolor: "#fff",
-              }}
-            >
-              <List dense>
-                {suggestions.map((suggestion, index) => (
-                  <ListItem
-                    key={index}
-                    button
-                    onClick={() => handleSuggestionClick(suggestion)}
-                    sx={{
-                      "&:hover": { bgcolor: "#f5f7fa" },
-                    }}
-                  >
-                    <ListItemText primary={suggestion} />
-                  </ListItem>
-                ))}
-              </List>
+            <Box sx={{ mt: 2 }}>
+              <Typography sx={{ fontSize: 12.5, color: palette.muted, mb: 0.75 }}>
+                Suggestions
+              </Typography>
+              <Box
+                sx={{
+                  maxHeight: 200,
+                  overflowY: "auto",
+                  border: `1px solid ${palette.line}`,
+                  borderRadius: "10px",
+                }}
+              >
+                <List dense disablePadding>
+                  {suggestions.map((suggestion, index) => (
+                    <ListItemButton
+                      key={index}
+                      onClick={() => handleSuggestionClick(suggestion)}
+                      sx={{
+                        py: 0.6,
+                        "&:hover": { bgcolor: palette.tealSoft },
+                      }}
+                    >
+                      <ListItemText
+                        primary={suggestion}
+                        primaryTypographyProps={{ fontSize: 13.5, color: palette.ink }}
+                      />
+                    </ListItemButton>
+                  ))}
+                </List>
+              </Box>
             </Box>
           )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, py: 2, borderTop: "1px solid #f0f0f0" }}>
+
+        <DialogActions sx={{ p: 2 }}>
           <Button
-            variant="outlined"
             onClick={() => setOpenDialog(false)}
-            sx={{ borderRadius: "10px", px: 3 }}
+            variant="outlined"
+            sx={{ borderColor: palette.line, color: palette.ink, textTransform: "none" }}
           >
             Cancel
           </Button>
           <Button
-            onClick={handleSave}
             variant="contained"
+            onClick={handleSave}
             sx={{
-              background: `linear-gradient(135deg, ${ACCENT}, ${ACCENT_HOVER})`,
-              color: "#fff",
-              borderRadius: "10px",
-              px: 4,
+              bgcolor: palette.teal,
               textTransform: "none",
               fontWeight: 600,
-              "&:hover": {
-                background: `linear-gradient(135deg, ${ACCENT_HOVER}, ${ACCENT_HOVER})`,
-              },
+              "&:hover": { bgcolor: palette.tealDeep },
             }}
           >
             {editIndex !== null ? "Update" : "Add"}

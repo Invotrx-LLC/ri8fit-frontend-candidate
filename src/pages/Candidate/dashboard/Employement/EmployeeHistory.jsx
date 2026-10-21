@@ -67,6 +67,28 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
     }
   }, [employmentHistroyInfo]);
 
+  // Compensation fields — same rules for current and latest-previous roles.
+  // "Fixed" breakdown → the whole current salary is the fixed component.
+  const buildCompensation = (data) => {
+    const breakdown = data.salary_breakdown || "";
+    const withStocks =
+      breakdown === "Fixed + Stocks" || breakdown === "Fixed + Variable + Stocks";
+    const withVariable =
+      breakdown === "Fixed + Variable" || breakdown === "Fixed + Variable + Stocks";
+    const current = Number(data.current_salary) || 0;
+    const stocks = withStocks ? data.stock_types || [] : [];
+    return {
+      current_salary: current,
+      salary_breakdown: breakdown,
+      fixed_salary:
+        breakdown === "Fixed" ? current : breakdown ? Number(data.fixed_salary) || 0 : 0,
+      variable_salary: withVariable ? Number(data.variable_salary) || 0 : 0,
+      stock_types: stocks,
+      type_of_stocks: stocks.join(", "),
+      value_of_stocks: withStocks ? Number(data.value_of_stocks) || 0 : 0,
+    };
+  };
+
   const getNumber = (value) => {
     if (!value) return 0;
     const num = parseInt(value);
@@ -110,9 +132,8 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
             ? data.skills_used
             : data.skills_used?.split(",").map((s) => s.trim()) || [],
           is_relevant: data.is_relevant ?? true,
-          // NEW: expected salary, same "" -> 0 decimal-safety pattern as
-          // current_salary below (Number("") is 0, never NaN).
-          expected_salary: Number(data.expected_salary) || 0,
+          // Expected salary is no longer asked — keep the saved value
+          expected_salary: Number(editingData?.expected_salary) || 0,
         };
 
         if (data.is_current) {
@@ -135,20 +156,7 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
             // (fields below n/a), and for valid typed values alike — instead
             // of the empty string "" that was tripping the 422 decimal_parsing
             // error on save.
-            current_salary: Number(data.current_salary) || 0,
-            salary_breakdown: data.salary_breakdown || "",
-            fixed_salary:
-              data.salary_breakdown && data.salary_breakdown !== "Fixed"
-                ? Number(data.fixed_salary) || 0
-                : 0,
-            variable_salary:
-              data.salary_breakdown && data.salary_breakdown !== "Fixed"
-                ? Number(data.variable_salary) || 0
-                : 0,
-            stock_types:
-              data.salary_breakdown === "Fixed + Variable + Stocks"
-                ? data.stock_types || []
-                : [],
+            ...buildCompensation(data),
             job_profile: data.job_profile || "",
             country: data.country || "",
             location: data.location || "",
@@ -175,20 +183,7 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
             currency: data.currency || "₹",
             // FIX: same decimal_parsing fix as the current-employment branch
             // above — was `data.current_salary || ""`, sending "" on blank.
-            current_salary: Number(data.current_salary) || 0,
-            salary_breakdown: data.salary_breakdown || "",
-            fixed_salary:
-              data.salary_breakdown && data.salary_breakdown !== "Fixed"
-                ? Number(data.fixed_salary) || 0
-                : 0,
-            variable_salary:
-              data.salary_breakdown && data.salary_breakdown !== "Fixed"
-                ? Number(data.variable_salary) || 0
-                : 0,
-            stock_types:
-              data.salary_breakdown === "Fixed + Variable + Stocks"
-                ? data.stock_types || []
-                : [],
+            ...buildCompensation(data),
             country: "",
             location: "",
             notice_period_days: 0,
@@ -448,7 +443,7 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
           )}
 
           {/* NEW: Current / Expected salary row — only renders when at least one is present */}
-          {(!!employment.current_salary || !!employment.expected_salary) && (
+          {!!employment.current_salary && (
             <Box sx={{ display: "flex", gap: 3, mt: 1, flexWrap: "wrap" }}>
               {!!employment.current_salary && (
                 <Box display="flex">
@@ -458,17 +453,6 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
                   <Typography sx={{ ml: 1, color: palette.muted, fontSize: { xs: 12, sm: 13.5 } }}>
                     {employment.currency || "₹"}
                     {formatSalaryDisplay(employment.current_salary, employment.currency)}
-                  </Typography>
-                </Box>
-              )}
-              {!!employment.expected_salary && (
-                <Box display="flex">
-                  <Typography sx={{ fontSize: { xs: 12, sm: 13.5 }, color: palette.ink, fontWeight: 500 }}>
-                    Expected Salary:
-                  </Typography>
-                  <Typography sx={{ ml: 1, color: palette.muted, fontSize: { xs: 12, sm: 13.5 } }}>
-                    {employment.currency || "₹"}
-                    {formatSalaryDisplay(employment.expected_salary, employment.currency)}
                   </Typography>
                 </Box>
               )}
@@ -492,6 +476,9 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
         handleSaveEmployment={handleSave}
         editingData={editingData}
         editingIndex={editingIndex}
+        // List is sorted newest first, so index 0 is the latest employment.
+        // Compensation is only shown when editing that record (not on Add).
+        isLatestEmployment={editingIndex === 0}
       />
     </Paper>
   );

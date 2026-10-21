@@ -16,6 +16,7 @@ import {
   Grid,
   Autocomplete,
   Divider,
+  Checkbox,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
@@ -55,6 +56,18 @@ const dialogFieldSx = {
     "& fieldset": { borderColor: palette.line },
     "&:hover fieldset": { borderColor: palette.teal },
     "&.Mui-focused fieldset": { borderColor: palette.teal },
+  },
+};
+
+/* Selected items in multi-select dropdowns — same teal chips as Add Skills */
+const multiChipSx = {
+  bgcolor: palette.tealSoft,
+  color: palette.teal,
+  fontWeight: 600,
+  fontSize: 12.5,
+  "& .MuiChip-deleteIcon": {
+    color: palette.teal,
+    "&:hover": { color: palette.tealDeep },
   },
 };
 
@@ -106,10 +119,10 @@ const EXTRA_GROUPS = [
     icon: TuneOutlinedIcon,
     usOnly: true,
     fields: [
-      { key: "preferredContactMethods", api: "preferred_contact_methods", label: "Contact Methods", type: "multi", options: "contactMethods" },
       { key: "preferredEmploymentTypes", api: "preferred_employment_types", label: "Employment Types", type: "multi", options: "employmentTypes" },
-      { key: "preferredEngagementTypes", api: "preferred_engagement_types", label: "Engagement Types", type: "multi", options: "engagementTypes" },
+      { key: "preferredEngagementTypes", api: "preferred_engagement_types", label: "Payroll Types", type: "multi", options: "engagementTypes" },
       { key: "preferredWorkArrangements", api: "preferred_work_arrangements", label: "Work Arrangements", type: "multi", options: "workArrangements" },
+      { key: "preferredContactMethods", api: "preferred_contact_methods", label: "Contact Methods", type: "multi", options: "contactMethods" },
     ],
   },
   {
@@ -123,13 +136,24 @@ const EXTRA_GROUPS = [
     ],
   },
   {
-    title: "Compensation & Benefits",
+    title: "Compensation & Benefits Preference",
     icon: PaymentsOutlinedIcon,
     usOnly: true,
     fields: [
       { key: "compensationBasis", api: "compensation_basis", label: "Compensation Basis", type: "single", options: "compensationBasis" },
       { key: "rateDependentOnBenefits", api: "rate_dependent_on_benefits", label: "Rate Depends on Benefits", type: "single", options: "benefitBasedRate" },
       { key: "importantW2Benefits", api: "important_w2_benefits", label: "Important W2 Benefits", type: "multi", options: "w2Benefits" },
+    ],
+  },
+  {
+    title: "Job Preferences",
+    icon: WorkOutlineOutlinedIcon,
+    fields: [
+      { key: "preferredJobCategories", api: "preferred_job_categories", label: "Job Categories", type: "multi", options: "jobCategories" },
+      { key: "preferredSeniorityLevels", api: "preferred_seniority_levels", label: "Seniority Levels", type: "multi", options: "seniorityLevels" },
+      { key: "preferredCompanyTypes", api: "preferred_company_types", label: "Company Types", type: "multi", options: "companyTypes" },
+      { key: "mostImportantOpportunityFactors", api: "most_important_opportunity_factors", label: "Opportunity Factors", type: "multi", options: "opportunityFactors" },
+      { key: "locationPreference", api: "location_preference", label: "Location Preference", type: "single", options: "locationPreferences" },
     ],
   },
   {
@@ -144,17 +168,6 @@ const EXTRA_GROUPS = [
       { key: "preferredInterviewDays", api: "preferred_interview_days", label: "Interview Days", type: "multi", options: "interviewDays" },
       { key: "preferredInterviewTime", api: "preferred_interview_time", label: "Interview Time", type: "single", options: "interviewPreferenceTypes" },
       { key: "interviewTimeZone", api: "interview_time_zone", label: "Interview Time Zone", type: "single", options: "timezones" },
-    ],
-  },
-  {
-    title: "Job Preferences",
-    icon: WorkOutlineOutlinedIcon,
-    fields: [
-      { key: "preferredJobCategories", api: "preferred_job_categories", label: "Job Categories", type: "multi", options: "jobCategories" },
-      { key: "preferredSeniorityLevels", api: "preferred_seniority_levels", label: "Seniority Levels", type: "multi", options: "seniorityLevels" },
-      { key: "preferredCompanyTypes", api: "preferred_company_types", label: "Company Types", type: "multi", options: "companyTypes" },
-      { key: "mostImportantOpportunityFactors", api: "most_important_opportunity_factors", label: "Opportunity Factors", type: "multi", options: "opportunityFactors" },
-      { key: "locationPreference", api: "location_preference", label: "Location Preference", type: "single", options: "locationPreferences" },
     ],
   },
   {
@@ -404,6 +417,8 @@ function Personaldetails({ onSectionComplete }) {
   const [open, setOpen] = useState(false);
   const [countries, setCountries] = useState([]);
   const [stateAndCity, setStateAndCity] = useState([]);
+  const [permanentStateOptions, setPermanentStateOptions] = useState([]);
+  const [sameAsCurrent, setSameAsCurrent] = useState(false);
   const [errors, setErrors] = useState({});
   const [selectedCountry, setSelectedCountry] = useState("");
   const { data: countriesData } = useGetCandidateCountriesQuery();
@@ -424,6 +439,9 @@ function Personaldetails({ onSectionComplete }) {
     stateAndCity: "",
     workAuthorization: "",
     pinCode: "",
+    permanentCountry: "",
+    permanentStateAndCity: "",
+    permanentPinCode: "",
     ...mapExtraFromApi(),
   });
 
@@ -447,6 +465,10 @@ function Personaldetails({ onSectionComplete }) {
       stateAndCity: candidateCompleateDetails?.state || "",
       workAuthorization: candidateCompleateDetails?.work_authorization || "",
       pinCode: candidateCompleateDetails?.pincode || "",
+      permanentCountry: candidateCompleateDetails?.permanent_country || "",
+      permanentStateAndCity:
+        candidateCompleateDetails?.permanent_city || candidateCompleateDetails?.permanent_state || "",
+      permanentPinCode: candidateCompleateDetails?.permanent_pincode || "",
       ...mapExtraFromApi(candidateCompleateDetails),
     });
     setSelectedCountry(candidateCompleateDetails?.country || "");
@@ -475,6 +497,71 @@ function Personaldetails({ onSectionComplete }) {
     setPersonalData((prev) => ({ ...prev, [key]: newValue || "" }));
     setErrors((prev) => ({ ...prev, [key]: "" }));
   };
+
+  const toTitleCase = (value) =>
+    value?.trim().toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase()) || "";
+
+  const loadLocations = async (country, setOptions) => {
+    if (!country) {
+      setOptions([]);
+      return;
+    }
+    try {
+      const response = await triggerGetLocations(country).unwrap();
+      setOptions(Array.isArray(response) ? response : response?.data ?? []);
+    } catch (error) {
+      console.error("Error fetching states/cities:", error);
+      setOptions([]);
+    }
+  };
+
+  const handleSelectPermanentCountry = (country) => {
+    const formatted = toTitleCase(country);
+    setPersonalData((prev) => ({ ...prev, permanentCountry: formatted, permanentStateAndCity: "" }));
+    loadLocations(formatted, setPermanentStateOptions);
+  };
+
+  // "Same as current address" copies the address AND its country / state & city / pincode
+  const handleSameAsCurrent = (event) => {
+    const isChecked = event.target.checked;
+    setSameAsCurrent(isChecked);
+    setPersonalData((prev) => ({
+      ...prev,
+      permanentAddress: isChecked ? prev.currentAddress : "",
+      permanentCountry: isChecked ? prev.country : "",
+      permanentStateAndCity: isChecked ? prev.stateAndCity : "",
+      permanentPinCode: isChecked ? prev.pinCode : "",
+    }));
+    if (isChecked) setErrors((prev) => ({ ...prev, permanentAddress: "" }));
+  };
+
+  // While ticked, keep the permanent block in sync with the current one
+  useEffect(() => {
+    if (!sameAsCurrent) return;
+    setPersonalData((prev) =>
+      prev.permanentAddress === prev.currentAddress &&
+      prev.permanentCountry === prev.country &&
+      prev.permanentStateAndCity === prev.stateAndCity &&
+      prev.permanentPinCode === prev.pinCode
+        ? prev
+        : {
+            ...prev,
+            permanentAddress: prev.currentAddress,
+            permanentCountry: prev.country,
+            permanentStateAndCity: prev.stateAndCity,
+            permanentPinCode: prev.pinCode,
+          }
+    );
+  }, [sameAsCurrent, personalData.currentAddress, personalData.country, personalData.stateAndCity, personalData.pinCode]);
+
+  // Load state & city lists for saved countries when the dialog opens
+  useEffect(() => {
+    if (!open) return;
+    if (personalData.country && !stateAndCity.length) loadLocations(personalData.country, setStateAndCity);
+    if (personalData.permanentCountry && !permanentStateOptions.length)
+      loadLocations(personalData.permanentCountry, setPermanentStateOptions);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Generic setter for the extra-details fields
   const handleExtraChange = (key) => (value) => {
@@ -582,6 +669,11 @@ function Personaldetails({ onSectionComplete }) {
           country: personalData.country,
           work_authorization: personalData.workAuthorization || "",
           pincode: personalData.pinCode,
+          // Permanent address location — new keys, backend must accept them
+          permanent_country: personalData.permanentCountry || null,
+          permanent_state: personalData.permanentStateAndCity || null,
+          permanent_city: personalData.permanentStateAndCity || null,
+          permanent_pincode: personalData.permanentPinCode || null,
           willing_to_relocate: candidateCompleateDetails?.willing_to_relocate ?? false,
           ...mapExtraToPayload(personalData, isUS, dd),
         };
@@ -657,10 +749,14 @@ function Personaldetails({ onSectionComplete }) {
       );
     }
 
+    const isMulti = f.type === "multi";
     return (
       <Autocomplete
-        multiple={f.type === "multi"}
-        filterSelectedOptions={f.type === "multi"}
+        multiple={isMulti}
+        // Multi-select: list stays open after each pick, picked items drop out of it
+        disableCloseOnSelect={isMulti}
+        filterSelectedOptions={isMulti}
+        ChipProps={{ size: "small", sx: multiChipSx }}
         options={(dd[f.options] || []).map((o) => o.key)}
         getOptionLabel={(k) => labelFor(dd[f.options], k)}
         loading={ddLoading}
@@ -757,19 +853,27 @@ function Personaldetails({ onSectionComplete }) {
               />
               <DetailRow
                 icon={<PublicOutlinedIcon sx={{ fontSize: 18 }} />}
-                label="Location"
+                label="Current Location"
                 value={[personalData.stateAndCity, personalData.country].filter(Boolean).join(", ")}
-              />
-              <DetailRow
-                icon={<BadgeOutlinedIcon sx={{ fontSize: 18 }} />}
-                label="Work Authorization"
-                value={personalData.workAuthorization}
               />
               <DetailRow
                 icon={<MarkunreadMailboxOutlinedIcon sx={{ fontSize: 18 }} />}
                 label="Pincode"
                 value={personalData.pinCode}
               />
+              {(personalData.permanentCountry || personalData.permanentStateAndCity) && (
+                <DetailRow
+                  icon={<PublicOutlinedIcon sx={{ fontSize: 18 }} />}
+                  label="Permanent Location"
+                  value={[
+                    personalData.permanentStateAndCity,
+                    personalData.permanentCountry,
+                    personalData.permanentPinCode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                />
+              )}
             </Grid>
           </Grid>
 
@@ -892,11 +996,12 @@ function Personaldetails({ onSectionComplete }) {
             </Grid>
           </Grid>
 
-          {/* ── Address ────────────────────────────────────────────────── */}
+          {/* ── Address — current + its location, then permanent + its location ── */}
           <Box sx={{ mt: 3 }}>
             <Divider sx={{ mb: 2, borderColor: palette.line }} />
             <GroupHeading icon={HomeOutlinedIcon} title="Address" />
             <Grid container spacing={1.5}>
+              {/* Current address */}
               <Grid item size={{ xs: 12 }}>
                 <TextField
                   fullWidth
@@ -910,28 +1015,7 @@ function Personaldetails({ onSectionComplete }) {
                   sx={dialogFieldSx}
                 />
               </Grid>
-              <Grid item size={{ xs: 12 }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Permanent Address"
-                  name="permanentAddress"
-                  value={personalData.permanentAddress}
-                  onChange={handleChange}
-                  error={!!errors.permanentAddress}
-                  helperText={errors.permanentAddress}
-                  sx={dialogFieldSx}
-                />
-              </Grid>
-            </Grid>
-          </Box>
-
-          {/* ── Location ───────────────────────────────────────────────── */}
-          <Box sx={{ mt: 3 }}>
-            <Divider sx={{ mb: 2, borderColor: palette.line }} />
-            <GroupHeading icon={PublicOutlinedIcon} title="Location" />
-            <Grid container spacing={1.5}>
-              <Grid item size={{ xs: 12, sm: 6 }}>
+              <Grid item size={{ xs: 12, sm: 4 }}>
                 <Autocomplete
                   options={countries}
                   value={selectedCountry || null}
@@ -951,7 +1035,7 @@ function Personaldetails({ onSectionComplete }) {
                   )}
                 />
               </Grid>
-              <Grid item size={{ xs: 12, sm: 6 }}>
+              <Grid item size={{ xs: 12, sm: 4 }}>
                 <Autocomplete
                   options={stateAndCity}
                   disabled={!selectedCountry}
@@ -969,26 +1053,7 @@ function Personaldetails({ onSectionComplete }) {
                   )}
                 />
               </Grid>
-              {selectedCountry === "United States" && (
-                <Grid item size={{ xs: 12, sm: 6 }}>
-                  <Autocomplete
-                    options={workAuthOptions}
-                    value={personalData.workAuthorization || null}
-                    onChange={handleDropdownChange("workAuthorization")}
-                    size="small"
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        label="Work Authorization"
-                        error={!!errors.workAuthorization}
-                        helperText={errors.workAuthorization}
-                        sx={dialogFieldSx}
-                      />
-                    )}
-                  />
-                </Grid>
-              )}
-              <Grid item size={{ xs: 12, sm: 6 }}>
+              <Grid item size={{ xs: 12, sm: 4 }}>
                 <TextField
                   fullWidth
                   size="small"
@@ -998,6 +1063,77 @@ function Personaldetails({ onSectionComplete }) {
                   onChange={handleChange}
                   error={!!errors.pinCode}
                   helperText={errors.pinCode}
+                  sx={dialogFieldSx}
+                />
+              </Grid>
+
+              {/* Same as current — right above the permanent address */}
+              <Grid item size={{ xs: 12 }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={sameAsCurrent}
+                      onChange={handleSameAsCurrent}
+                      size="small"
+                      sx={{ color: palette.teal, "&.Mui-checked": { color: palette.teal } }}
+                    />
+                  }
+                  label={
+                    <Typography sx={{ fontSize: 13, color: palette.ink }}>
+                      Same as current address
+                    </Typography>
+                  }
+                />
+              </Grid>
+
+              {/* Permanent address */}
+              <Grid item size={{ xs: 12 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Permanent Address"
+                  name="permanentAddress"
+                  value={personalData.permanentAddress}
+                  onChange={handleChange}
+                  disabled={sameAsCurrent}
+                  error={!!errors.permanentAddress}
+                  helperText={errors.permanentAddress}
+                  sx={dialogFieldSx}
+                />
+              </Grid>
+              <Grid item size={{ xs: 12, sm: 4 }}>
+                <Autocomplete
+                  options={countries}
+                  disabled={sameAsCurrent}
+                  value={personalData.permanentCountry || null}
+                  onChange={(e, value) => handleSelectPermanentCountry(value)}
+                  size="small"
+                  renderInput={(params) => (
+                    <TextField {...params} label="Country" sx={dialogFieldSx} />
+                  )}
+                />
+              </Grid>
+              <Grid item size={{ xs: 12, sm: 4 }}>
+                <Autocomplete
+                  options={sameAsCurrent ? stateAndCity : permanentStateOptions}
+                  disabled={sameAsCurrent || !personalData.permanentCountry}
+                  value={personalData.permanentStateAndCity || null}
+                  onChange={handleDropdownChange("permanentStateAndCity")}
+                  size="small"
+                  renderInput={(params) => (
+                    <TextField {...params} label="State & City" sx={dialogFieldSx} />
+                  )}
+                />
+              </Grid>
+              <Grid item size={{ xs: 12, sm: 4 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Pincode"
+                  name="permanentPinCode"
+                  disabled={sameAsCurrent}
+                  value={personalData.permanentPinCode}
+                  onChange={handleChange}
                   sx={dialogFieldSx}
                 />
               </Grid>

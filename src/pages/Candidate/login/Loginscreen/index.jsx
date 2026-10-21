@@ -256,8 +256,7 @@ const CandidateLogin = () => {
             maxWidth: 340,
           }}
         >
-          Our AI-powered platform intelligently matches your expertise with the
-          right life sciences.
+          Discover relevant jobs, track applications, prepare for interviews, and manage offers all from one platform.
         </Typography>
 
         {/* illustration pinned to bottom */}

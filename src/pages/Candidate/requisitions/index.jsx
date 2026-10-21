@@ -315,7 +315,7 @@ const CandidateRequisitions = () => {
           </Box>
           <Box>
             <Typography sx={{ fontFamily: FONT_DISPLAY, fontWeight: 700, fontSize: 19, color: INK, lineHeight: 1.2 }}>
-              Jobs to apply
+              Relevant Jobs 
             </Typography>
             <Typography sx={{ fontSize: 12.5, color: TEXT_MUTED, mt: 0.25 }}>
               {isFetching ? "Refreshing…" : `${jobs.length} open role${jobs.length === 1 ? "" : "s"} in ${country}`}
