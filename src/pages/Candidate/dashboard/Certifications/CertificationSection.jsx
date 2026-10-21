@@ -10,7 +10,12 @@ import {
   TextField,
   IconButton,
   Paper,
+  Grid,
+  Divider,
 } from "@mui/material";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { DatePicker } from "@mui/x-date-pickers/DatePicker";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 
 import CloseIcon from "@mui/icons-material/Close";
 import EditIcon from "@mui/icons-material/Edit";
@@ -19,9 +24,10 @@ import WorkspacePremiumOutlinedIcon from "@mui/icons-material/WorkspacePremiumOu
 import ApartmentOutlinedIcon from "@mui/icons-material/ApartmentOutlined";
 import EventOutlinedIcon from "@mui/icons-material/EventOutlined";
 import InsertDriveFileOutlinedIcon from "@mui/icons-material/InsertDriveFileOutlined";
+import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 
 import { useDispatch } from "react-redux";
-import { format, isValid } from "date-fns";
+import { format, isValid, parse } from "date-fns";
 
 import candidateApi from "../../../../services/candidateApi";
 import { candidateUpdateFormData } from "../../../../store/slices/candidateSlice";
@@ -46,6 +52,26 @@ const dialogFieldSx = {
   },
 };
 
+
+/* Same group heading as the Personal Details dialog */
+const GroupHeading = ({ icon: Icon, title }) => (
+  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
+    <Icon sx={{ fontSize: 17, color: palette.teal }} />
+    <Typography sx={{ fontFamily: fonts.display, fontWeight: 600, fontSize: 14, color: palette.ink }}>
+      {title}
+    </Typography>
+  </Box>
+);
+
+/* API dates may come as "dd/MM/yyyy" or "yyyy-MM-dd" — both become a Date for the picker */
+const toPickerDate = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return isValid(value) ? value : null;
+  const ddmmyyyy = parse(value, "dd/MM/yyyy", new Date());
+  if (isValid(ddmmyyyy)) return ddmmyyyy;
+  const d = new Date(value);
+  return isValid(d) ? d : null;
+};
 
 const DetailRow = ({ icon, label, value }) => (
   <Box
@@ -107,8 +133,8 @@ function CertificationSection({
     id: null,
     name: "",
     organization: "",
-    issueDate: "",
-    expiryDate: "",
+    issueDate: null,
+    expiryDate: null,
     file: null,
   });
 
@@ -210,8 +236,8 @@ function CertificationSection({
         id: cert.id || null,
         name: cert.name || "",
         organization: cert.organization || "",
-        issueDate: cert.issueDate || "",
-        expiryDate: cert.expiryDate || "",
+        issueDate: toPickerDate(cert.issueDate),
+        expiryDate: toPickerDate(cert.expiryDate),
         file: cert.file || null,
       });
 
@@ -221,8 +247,8 @@ function CertificationSection({
         id: null,
         name: "",
         organization: "",
-        issueDate: "",
-        expiryDate: "",
+        issueDate: null,
+        expiryDate: null,
         file: null,
       });
 
@@ -246,8 +272,8 @@ function CertificationSection({
       id: null,
       name: "",
       organization: "",
-      issueDate: "",
-      expiryDate: "",
+      issueDate: null,
+      expiryDate: null,
       file: null,
     });
 
@@ -287,6 +313,17 @@ function CertificationSection({
   };
 
 
+  // Date pickers hand back a Date (or null when cleared)
+  const handleDateChange = (key) => (date) => {
+    setCertData((prev) => ({ ...prev, [key]: date }));
+    setErrors((prev) => ({ ...prev, [key]: "" }));
+  };
+
+  const handleRemoveFile = () => {
+    setCertData((prev) => ({ ...prev, file: null }));
+  };
+
+
   // =========================================================
   // VALIDATION
   // =========================================================
@@ -303,7 +340,7 @@ function CertificationSection({
         "Issuing Organization is required";
     }
 
-    if (!certData.issueDate) {
+    if (!toPickerDate(certData.issueDate)) {
       tempErrors.issueDate = "Issue Date is required";
     }
 
@@ -311,8 +348,8 @@ function CertificationSection({
     if (
       certData.expiryDate &&
       certData.issueDate &&
-      new Date(certData.expiryDate) <
-        new Date(certData.issueDate)
+      toPickerDate(certData.expiryDate) <
+        toPickerDate(certData.issueDate)
     ) {
       tempErrors.expiryDate =
         "Expiry Date cannot be before Issue Date";
@@ -332,9 +369,9 @@ function CertificationSection({
     if (!date) return "";
 
     try {
-      const parsedDate = new Date(date);
+      const parsedDate = toPickerDate(date);
 
-      if (!isValid(parsedDate)) {
+      if (!parsedDate) {
         return "";
       }
 
@@ -504,9 +541,9 @@ function CertificationSection({
     if (!date) return "";
 
     try {
-      const parsedDate = new Date(date);
+      const parsedDate = toPickerDate(date);
 
-      if (!isValid(parsedDate)) {
+      if (!parsedDate) {
         return date;
       }
 
@@ -878,218 +915,186 @@ function CertificationSection({
 
         <DialogContent dividers>
           {/* SUBMIT ERROR */}
-
           {errors.submit && (
-            <Typography
-              sx={{
-                color: palette.coral,
-                mb: 2,
-              }}
-              variant="body2"
-            >
+            <Typography sx={{ color: palette.coral, mb: 2 }} variant="body2">
               {errors.submit}
             </Typography>
           )}
 
+          {/* ── Certificate Details ─────────────────────────────────────── */}
+          <GroupHeading icon={WorkspacePremiumOutlinedIcon} title="Certificate Details" />
+          <Grid container spacing={1.5}>
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Certification Name"
+                name="name"
+                value={certData.name}
+                onChange={handleChange}
+                error={!!errors.name}
+                helperText={errors.name}
+                required
+                sx={dialogFieldSx}
+              />
+            </Grid>
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Issuing Organization"
+                name="organization"
+                value={certData.organization}
+                onChange={handleChange}
+                error={!!errors.organization}
+                helperText={errors.organization}
+                required
+                sx={dialogFieldSx}
+              />
+            </Grid>
+          </Grid>
 
-          {/* CERTIFICATION NAME */}
+          {/* ── Validity ─────────────────────────────────────────────────── */}
+          <Box sx={{ mt: 3 }}>
+            <Divider sx={{ mb: 2, borderColor: palette.line }} />
+            <GroupHeading icon={EventOutlinedIcon} title="Validity" />
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <DatePicker
+                    label="Issue Date *"
+                    value={certData.issueDate}
+                    onChange={handleDateChange("issueDate")}
+                    format="dd/MM/yyyy"
+                    disableFuture
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        size: "small",
+                        error: !!errors.issueDate,
+                        helperText: errors.issueDate,
+                        sx: dialogFieldSx,
+                      },
+                      popper: { sx: { zIndex: 1300 } },
+                    }}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <DatePicker
+                    label="Expiry Date"
+                    value={certData.expiryDate}
+                    onChange={handleDateChange("expiryDate")}
+                    format="dd/MM/yyyy"
+                    minDate={certData.issueDate || undefined}
+                    slotProps={{
+                      textField: {
+                        fullWidth: true,
+                        size: "small",
+                        error: !!errors.expiryDate,
+                        helperText: errors.expiryDate || "Leave empty if it doesn't expire",
+                        sx: dialogFieldSx,
+                      },
+                      field: { clearable: true },
+                      popper: { sx: { zIndex: 1300 } },
+                    }}
+                  />
+                </Grid>
+              </Grid>
+            </LocalizationProvider>
+          </Box>
 
-          <Typography
-            sx={{
-              fontWeight: 600,
-              color: palette.ink,
-              mt: 0.5,
-            }}
-          >
-            Certification Name
-          </Typography>
+          {/* ── Certificate File ─────────────────────────────────────────── */}
+          <Box sx={{ mt: 3 }}>
+            <Divider sx={{ mb: 2, borderColor: palette.line }} />
+            <GroupHeading icon={InsertDriveFileOutlinedIcon} title="Certificate File" />
 
-          <TextField
-            fullWidth
-            label="Certification Name"
-            name="name"
-            margin="dense"
-            sx={dialogFieldSx}
-            value={certData.name}
-            onChange={handleChange}
-            error={!!errors.name}
-            helperText={errors.name}
-            required
-          />
-
-
-          {/* ISSUING ORGANIZATION */}
-
-          <Typography
-            sx={{
-              fontWeight: 600,
-              color: palette.ink,
-              mt: 2,
-            }}
-          >
-            Issuing Organization
-          </Typography>
-
-          <TextField
-            fullWidth
-            label="Issuing Organization"
-            name="organization"
-            margin="dense"
-            sx={dialogFieldSx}
-            value={
-              certData.organization
-            }
-            onChange={handleChange}
-            error={
-              !!errors.organization
-            }
-            helperText={
-              errors.organization
-            }
-            required
-          />
-
-
-          {/* ISSUE DATE */}
-
-          <Typography
-            sx={{
-              fontWeight: 600,
-              color: palette.ink,
-              mt: 2,
-            }}
-          >
-            Issue Date
-          </Typography>
-
-          <TextField
-            fullWidth
-            type="date"
-            label="Issue Date"
-            name="issueDate"
-            margin="dense"
-            sx={dialogFieldSx}
-            InputLabelProps={{
-              shrink: true,
-            }}
-            value={
-              certData.issueDate
-            }
-            onChange={handleChange}
-            error={
-              !!errors.issueDate
-            }
-            helperText={
-              errors.issueDate
-            }
-            required
-          />
-
-
-          {/* EXPIRY DATE */}
-
-          <Typography
-            sx={{
-              fontWeight: 600,
-              color: palette.ink,
-              mt: 2,
-            }}
-          >
-            Expiry Date
-            <Typography
-              component="span"
-              sx={{
-                fontWeight: 400,
-                color: palette.muted,
-                ml: 0.5,
-                fontSize: 12,
-              }}
-            >
-              (Optional)
-            </Typography>
-          </Typography>
-
-          <TextField
-            fullWidth
-            type="date"
-            label="Expiry Date"
-            name="expiryDate"
-            margin="dense"
-            sx={dialogFieldSx}
-            InputLabelProps={{
-              shrink: true,
-            }}
-            value={
-              certData.expiryDate
-            }
-            onChange={handleChange}
-            error={
-              !!errors.expiryDate
-            }
-            helperText={
-              errors.expiryDate
-            }
-          />
-
-
-          {/* CERTIFICATE FILE */}
-
-          <Typography
-            sx={{
-              fontWeight: 600,
-              color: palette.ink,
-              mt: 2,
-              mb: 1,
-            }}
-          >
-            Certificate
-          </Typography>
-
-          <Button
-            variant="outlined"
-            component="label"
-            fullWidth
-            disabled={loading}
-            sx={{
-              borderColor: palette.line,
-              color: palette.ink,
-              textTransform: "none",
-              "&:hover": {
-                borderColor:
-                  palette.teal,
-                bgcolor:
-                  palette.tealSoft,
-              },
-            }}
-          >
-            Upload Certificate
-            {" "}
-            (PDF/Image)
-
-            <input
-              type="file"
-              name="file"
-              hidden
-              accept=".pdf,.png,.jpg,.jpeg"
-              onChange={handleChange}
-            />
-          </Button>
-
-
-          {/* SELECTED FILE */}
-
-          {certData.file && (
-            <Typography
-              sx={{
-                mt: 1,
-                color: palette.teal,
-                fontSize: 13,
-              }}
-            >
-              Selected:{" "}
-              {certData.file.name}
-            </Typography>
-          )}
+            {certData.file ? (
+              /* Selected / existing file */
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1.25,
+                  border: `1px solid ${palette.line}`,
+                  borderRadius: "10px",
+                  px: 1.5,
+                  py: 1.1,
+                  bgcolor: palette.tealSoft,
+                }}
+              >
+                <InsertDriveFileOutlinedIcon sx={{ fontSize: 20, color: palette.teal }} />
+                <Typography
+                  sx={{
+                    flex: 1,
+                    minWidth: 0,
+                    fontSize: 13.5,
+                    color: palette.ink,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                  title={certData.file.name}
+                >
+                  {certData.file.name}
+                </Typography>
+                <Button
+                  component="label"
+                  size="small"
+                  disabled={loading}
+                  sx={{ textTransform: "none", fontWeight: 600, color: palette.teal, minWidth: 0 }}
+                >
+                  Replace
+                  <input type="file" name="file" hidden accept=".pdf,.png,.jpg,.jpeg" onChange={handleChange} />
+                </Button>
+                <IconButton
+                  size="small"
+                  onClick={handleRemoveFile}
+                  disabled={loading}
+                  aria-label="Remove file"
+                  sx={{ color: palette.muted }}
+                >
+                  <CloseIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Box>
+            ) : (
+              /* Upload area */
+              <Box
+                component="label"
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 0.5,
+                  border: `1.5px dashed ${palette.line}`,
+                  borderRadius: "10px",
+                  py: 2.5,
+                  px: 2,
+                  cursor: loading ? "default" : "pointer",
+                  transition: "all .15s ease",
+                  "&:hover": loading
+                    ? {}
+                    : { borderColor: palette.teal, bgcolor: palette.tealSoft },
+                }}
+              >
+                <UploadFileOutlinedIcon sx={{ fontSize: 26, color: palette.teal }} />
+                <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: palette.ink }}>
+                  Click to upload certificate
+                </Typography>
+                <Typography sx={{ fontSize: 12, color: palette.muted }}>
+                  PDF, PNG or JPG
+                </Typography>
+                <input
+                  type="file"
+                  name="file"
+                  hidden
+                  disabled={loading}
+                  accept=".pdf,.png,.jpg,.jpeg"
+                  onChange={handleChange}
+                />
+              </Box>
+            )}
+          </Box>
         </DialogContent>
 
 

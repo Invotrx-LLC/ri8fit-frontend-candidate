@@ -39,7 +39,7 @@ const TOPBAR_HEIGHT = 64;
 const MAIN_ITEMS = [
   { label: "Profile", path: "/for-candidate/profile", icon: <Person />, disabled: false },
   // { label: "Candidates", path: "/acc/candidates", icon: <PeopleAltIcon />, disabled: true },
-  { label: "Requisitions", path: "/for-candidate/requisitions", icon: <WorkOutlineIcon />, disabled: false },
+  { label: "Jobs", path: "/for-candidate/requisitions", icon: <WorkOutlineIcon />, disabled: false },
   { label: "Gap Analysis", path: "/for-candidate/analysis", icon: <AnalyticsOutlinedIcon />, disabled: false },
   { label: "Interviews", path: "/for-candidate/interviews", icon: <AssignmentIndIcon />, disabled: true },
 ];
@@ -98,7 +98,7 @@ function CandidateLayout() {
     icon: <Person2 />,
   },
   {
-    label: "Requisitions",
+    label: "Jobs",
     path: "/for-candidate/requisitions",
     icon: <BusinessCenter />,
   },

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from "react";
 import {
   Box,
@@ -15,8 +14,16 @@ import {
   Autocomplete,
   Chip,
   InputAdornment,
+  IconButton,
+  Grid,
+  Divider,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import TuneOutlinedIcon from "@mui/icons-material/TuneOutlined";
+import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
+import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
+import PlaceOutlinedIcon from "@mui/icons-material/PlaceOutlined";
+import ExtensionOutlinedIcon from "@mui/icons-material/ExtensionOutlined";
 import { format } from "date-fns";
 import { LocalizationProvider, DatePicker } from "@mui/x-date-pickers";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -24,9 +31,16 @@ import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 const PRIMARY = "#2B6F71";
 const PRIMARY_HOVER = "#1F5557";
 const PRIMARY_LIGHT = "#D8ECEC";
+// Same visual tokens as the Personal Details dialog
+const INK = "#1F2937";
+const MUTED = "#6B7280";
+const LINE = "#DDE1EA";
+const CORAL = "#D9534F";
+const DISPLAY_FONT = "Georgia, 'Times New Roman', serif";
 
 const fieldSx = {
   "& .MuiOutlinedInput-root": {
+    background: "#fff",
     "& fieldset": { borderColor: "#DDE1EA" },
     "&:hover fieldset": { borderColor: PRIMARY },
     "&.Mui-focused fieldset": { borderColor: PRIMARY },
@@ -34,7 +48,59 @@ const fieldSx = {
   "& .MuiInputLabel-root.Mui-focused": { color: PRIMARY },
 };
 
-const radioSx = { color: PRIMARY, "&.Mui-checked": { color: PRIMARY } };
+const radioSx = { color: LINE, p: 0.5, mr: 0.5, "&.Mui-checked": { color: PRIMARY } };
+
+/* Group heading — same as the Personal Details dialog */
+const GroupHeading = ({ icon: Icon, title }) => (
+  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
+    <Icon sx={{ fontSize: 17, color: PRIMARY }} />
+    <Typography sx={{ fontFamily: DISPLAY_FONT, fontWeight: 600, fontSize: 14, color: INK }}>
+      {title}
+    </Typography>
+  </Box>
+);
+
+/* Divider + heading + content block */
+const Section = ({ icon, title, children }) => (
+  <Box sx={{ mt: 3 }}>
+    <Divider sx={{ mb: 2, borderColor: LINE }} />
+    <GroupHeading icon={icon} title={title} />
+    {children}
+  </Box>
+);
+
+/* Compact Yes / No radio with a small muted label */
+const YesNo = ({ label, value, onChange }) => (
+  <Box>
+    <Typography sx={{ fontSize: 12.5, color: MUTED, mb: 0.25 }}>{label}</Typography>
+    <RadioGroup
+      row
+      value={value === true ? "yes" : "no"}
+      onChange={(e) => onChange(e.target.value === "yes")}
+      sx={{ gap: 2 }}
+    >
+      {["yes", "no"].map((opt) => {
+        const selected = (value === true ? "yes" : "no") === opt;
+        return (
+          <FormControlLabel
+            key={opt}
+            value={opt}
+            control={<Radio size="small" sx={radioSx} />}
+            label={opt === "yes" ? "Yes" : "No"}
+            sx={{
+              m: 0,
+              "& .MuiFormControlLabel-label": {
+                fontSize: 13.5,
+                color: selected ? PRIMARY_HOVER : "#4B5563",
+                fontWeight: selected ? 700 : 500,
+              },
+            }}
+          />
+        );
+      })}
+    </RadioGroup>
+  </Box>
+);
 
 const autocompletePaperProps = {
   paper: {
@@ -191,6 +257,7 @@ const AddEmployment = ({
     stock_types: [],
     skills_used: [],
     job_profile: "",
+    key_responsibilities: "",
     country: "",
     location: "",
     notice_period_days: "",
@@ -362,7 +429,7 @@ const AddEmployment = ({
       job_profile: jobProfile || "",
       country: localData.country || "",
       location: localData.location || "",
-      key_responsibilities: "",
+      key_responsibilities: localData.key_responsibilities || "",
       notice_period_days: parseNoticePeriodDaysLabel(localData.notice_period_days),
       duration: localData.duration || "",
       is_relevant: !!localData.is_relevant,
@@ -429,6 +496,7 @@ const AddEmployment = ({
           ? editingData.skills_used.split(",").map((s) => s.trim())
           : [],
         job_profile: editingData.job_profile || "",
+        key_responsibilities: editingData.key_responsibilities || "",
         country: editingData.country || "",
         location: editingData.location || "",
         notice_period_days: editingData.notice_period_days?.toString() || "",
@@ -447,6 +515,34 @@ const AddEmployment = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingData, open]);
 
+  // Rendered in both the current and previous layouts.
+  // Called as a function (not <Component />) so the textarea keeps focus while typing.
+  const renderKeyResponsibilities = () => (
+    <TextField
+      label="Key Responsibilities"
+      fullWidth
+      multiline
+      minRows={3}
+      size="small"
+      placeholder="e.g. Built SDTM/ADaM datasets, reviewed TLFs, led a team of 4"
+      value={localData.key_responsibilities}
+      onChange={handleFieldChange("key_responsibilities")}
+      sx={fieldSx}
+    />
+  );
+
+  /* Small helpers so every field shares the Personal Details look */
+  const dateSlotProps = {
+    textField: { size: "small", fullWidth: true, sx: fieldSx },
+    popper: { sx: { zIndex: 1300 } },
+    day: { sx: datePickerDaySx },
+  };
+  const currencyAdornment = {
+    startAdornment: (
+      <InputAdornment position="start">{localData.currency || "₹"}</InputAdornment>
+    ),
+  };
+
   return (
     <Dialog
       open={open}
@@ -456,499 +552,443 @@ const AddEmployment = ({
       }}
       maxWidth="sm"
       fullWidth
-      PaperProps={{
-        sx: {
-          borderRadius: "20px",
-          overflow: "hidden",
-          boxShadow: "0px 12px 40px rgba(0,0,0,0.15)",
-        },
-      }}
+      PaperProps={{ sx: { borderRadius: "14px" } }}
     >
-      <DialogTitle
-        sx={{
-          background: `linear-gradient(135deg, ${PRIMARY}, ${PRIMARY_HOVER})`,
-          color: "#fff",
-          py: 2.5,
-          px: 3,
-          fontWeight: 600,
-          position: "relative",
-        }}
-      >
+      <DialogTitle sx={{ fontFamily: DISPLAY_FONT, fontWeight: 600, color: INK }}>
         {editingIndex !== null ? "Edit Employment" : "Add Employment"}
-        <CloseIcon
+        <IconButton
           onClick={() => setOpen(false)}
-          sx={{ position: "absolute", right: 20, top: 20, cursor: "pointer" }}
-        />
+          sx={{ position: "absolute", right: 8, top: 8, color: PRIMARY }}
+        >
+          <CloseIcon />
+        </IconButton>
       </DialogTitle>
 
-      <DialogContent sx={{ p: 3, paddingTop: 4 }}>
+      <DialogContent dividers>
         {error && (
-          <Typography color="error" sx={{ mb: 2 }}>
+          <Typography sx={{ color: CORAL, mb: 2 }} variant="body2">
             {error}
           </Typography>
         )}
-        <Typography sx={{ mb: 0, fontSize: "13px" }}>
-          Is This Your Current Employement ?
-        </Typography>
-        {/* Current / Previous Employment */}
-        <RadioGroup
-          row
-          value={localData.is_current === true ? "yes" : "no"}
-          onChange={(e) => {
-            const newValue = e.target.value === "yes"; // convert back to boolean
-            setLocalData({ ...localData, is_current: newValue });
-          }}
-        >
-          <FormControlLabel
-            value="yes"
-            control={<Radio sx={radioSx} />}
-            label="Yes"
-          />
-          <FormControlLabel
-            value="no"
-            control={<Radio sx={radioSx} />}
-            label="No"
-          />
-        </RadioGroup>
 
-        <Typography sx={{ mb: 0, fontSize: "13px" }}>
-          Is This Relevant Experience ?
-        </Typography>
-        {/* Current / Previous Employment */}
-        <RadioGroup
-          row
-          value={localData.is_relevant === true ? "yes" : "no"}
-          onChange={(e) => {
-            const newValue = e.target.value === "yes"; // convert back to boolean
-            setLocalData({ ...localData, is_relevant: newValue });
-          }}
-        >
-          <FormControlLabel
-            value="yes"
-            control={<Radio sx={radioSx} />}
-            label="Yes"
-          />
-          <FormControlLabel
-            value="no"
-            control={<Radio sx={radioSx} />}
-            label="No"
-          />
-        </RadioGroup>
-
-        {/* Total Experience */}
+        {/* ── Status ─────────────────────────────────────────────────── */}
+        <GroupHeading icon={TuneOutlinedIcon} title="Status" />
+        <Grid container spacing={1.5}>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <YesNo
+              label="Is this your current employment?"
+              value={localData.is_current}
+              onChange={(v) => setLocalData((prev) => ({ ...prev, is_current: v }))}
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6 }}>
+            <YesNo
+              label="Is this relevant experience?"
+              value={localData.is_relevant}
+              onChange={(v) => setLocalData((prev) => ({ ...prev, is_relevant: v }))}
+            />
+          </Grid>
+        </Grid>
 
         {localData?.is_current ? (
-          <Box>
-            <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
-              <Autocomplete
-                options={totalYearsList}
-                value={localData.total_exp_years || ""}
-                onChange={handleAutoCompleteChange("total_exp_years")}
-                sx={{ flex: 1 }}
-                componentsProps={autocompletePaperProps}
-                renderInput={(params) => (
-                  <TextField {...params} label="Experience In Years" sx={fieldSx} />
-                )}
-              />
-              <Autocomplete
-                options={totalMonths}
-                value={localData.total_exp_months || ""}
-                onChange={handleAutoCompleteChange("total_exp_months")}
-                sx={{ flex: 1 }}
-                componentsProps={autocompletePaperProps}
-                renderInput={(params) => (
-                  <TextField {...params} label="Experience In Months" sx={fieldSx} />
-                )}
-              />
-            </Box>
-            {/* Employment Type */}
-            <Box sx={{ mt: 1 }}>
-              <Autocomplete
-                options={employmentTypes}
-                value={localData.employment_type || ""}
-                onChange={handleAutoCompleteChange("employment_type")}
-                componentsProps={autocompletePaperProps}
-                renderInput={(params) => (
-                  <TextField {...params} label="Employment Type" sx={fieldSx} />
-                )}
-              />
-            </Box>
-
-            {/* Job Title + Company Name */}
-            <Box display="flex" gap={2} mt={2}>
-              <TextField
-                label="Job Title"
-                fullWidth
-                value={localData.job_title}
-                onChange={handleFieldChange("job_title")}
-                sx={fieldSx}
-              />
-              <TextField
-                label="Company Name"
-                fullWidth
-                value={localData.company_name}
-                onChange={handleFieldChange("company_name")}
-                sx={fieldSx}
-              />
-            </Box>
-
-            {/* Start / End Date */}
-            <Box display="flex" gap={2} mt={2}>
-  <LocalizationProvider dateAdapter={AdapterDateFns}>
-    <DatePicker
-      sx={{ mt: -1, ...fieldSx }}
-      label="Start Date"
-      value={localData.joining_date || null}
-      onChange={(value) => {
-        setLocalData((prev) => ({
-          ...prev,
-          joining_date: value,
-          // clear end date if it's now before the new start date
-          end_date:
-            prev.end_date && value && new Date(prev.end_date) < new Date(value)
-              ? null
-              : prev.end_date,
-        }));
-      }}
-      maxDate={localData.end_date ? new Date(localData.end_date) : undefined}
-      slots={{ textField: TextField }}
-      slotProps={{
-        textField: { size: "medium", fullWidth: true },
-        popper: {
-          modifiers: [{ name: "offset", options: { offset: [0, 10] } }],
-          sx: { zIndex: 1300, backgroundColor: "white" },
-        },
-        day: { sx: datePickerDaySx },
-      }}
-    />
-  </LocalizationProvider>
-  <LocalizationProvider dateAdapter={AdapterDateFns}>
-    <DatePicker
-      sx={{ mt: -1, ...fieldSx }}
-      label="End Date"
-      value={localData.end_date || null}
-      onChange={handleDateChange("end_date")}
-      disabled={localData.is_current}
-      minDate={localData.joining_date ? new Date(localData.joining_date) : undefined}
-      slots={{ textField: TextField }}
-      slotProps={{
-        textField: { size: "medium", fullWidth: true },
-        popper: {
-          modifiers: [{ name: "offset", options: { offset: [0, 10] } }],
-          sx: { zIndex: 1300, backgroundColor: "white" },
-        },
-        day: { sx: datePickerDaySx },
-      }}
-    />
-  </LocalizationProvider>
-</Box>
-
-            {/* Salary */}
-            <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
-              <Autocomplete
-                options={currencyOptions}
-                value={localData.currency || "₹"}
-                onChange={handleAutoCompleteChange("currency")}
-                disableClearable
-                sx={{ width: 120 }}
-                componentsProps={autocompletePaperProps}
-                renderInput={(params) => (
-                  <TextField {...params} label="Currency" sx={fieldSx} />
-                )}
-              />
-              <TextField
-                label="Current Salary"
-                fullWidth
-                value={localData.current_salary}
-                onChange={handleFieldChange("current_salary")}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      {localData.currency || "₹"}
-                    </InputAdornment>
-                  ),
-                }}
-                sx={fieldSx}
-              />
-            </Box>
-            {localData.currency === "₹" && localData.current_salary && (
-              <Typography sx={{ mt: 0.5, ml: 0.5, fontSize: "12.5px", color: "#2e7d32" }}>
-                {numberToWordsIndian(localData.current_salary)}
-              </Typography>
-            )}
-
-            {/* Salary Breakdown */}
-            <Box sx={{ mt: 2 }}>
-              <Autocomplete
-                options={salaryBreakdownList}
-                value={localData.salary_breakdown || ""}
-                onChange={(e, value) =>
-                  setLocalData((prev) => ({
-                    ...prev,
-                    salary_breakdown: value,
-                    // reset dependent fields whenever the breakdown type changes
-                    fixed_salary: value === "Fixed" ? "" : prev.fixed_salary,
-                    variable_salary: value === "Fixed" ? "" : prev.variable_salary,
-                    stock_types:
-                      value === "Fixed + Variable + Stocks" ? prev.stock_types : [],
-                  }))
-                }
-                componentsProps={autocompletePaperProps}
-                renderInput={(params) => (
-                  <TextField {...params} label="Salary Breakdown" sx={fieldSx} />
-                )}
-              />
-              {localData.salary_breakdown === "Fixed" && (
-                <Typography sx={{ mt: 0.5, ml: 0.5, fontSize: "12.5px", color: "#2e7d32" }}>
-                  Your total salary has been considered as fixed component
-                </Typography>
-              )}
-            </Box>
-
-            {(localData.salary_breakdown === "Fixed + Variable" ||
-              localData.salary_breakdown === "Fixed + Variable + Stocks") && (
-              <Box display="flex" gap={2} mt={2}>
-                <TextField
-                  label="Fixed Salary"
-                  fullWidth
-                  value={localData.fixed_salary}
-                  onChange={handleFieldChange("fixed_salary")}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        {localData.currency || "₹"}
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={fieldSx}
-                />
-                <TextField
-                  label="Variable Salary"
-                  fullWidth
-                  placeholder="Eg. 45,765"
-                  value={localData.variable_salary}
-                  onChange={handleFieldChange("variable_salary")}
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        {localData.currency || "₹"}
-                      </InputAdornment>
-                    ),
-                  }}
-                  sx={fieldSx}
-                />
-              </Box>
-            )}
-
-            {localData.salary_breakdown === "Fixed + Variable + Stocks" && (
-              <Box sx={{ mt: 2 }}>
-                <Typography sx={{ mb: 1, fontSize: "13px", fontWeight: 600 }}>
-                  Type of stocks
-                </Typography>
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                  {stockTypeOptions.map((type) => {
-                    const selected = localData.stock_types.includes(type);
-                    return (
-                      <Chip
-                        key={type}
-                        label={type}
-                        onClick={() => toggleStockType(type)}
-                        variant={selected ? "filled" : "outlined"}
-                        sx={{
-                          borderColor: PRIMARY,
-                          color: selected ? "#fff" : PRIMARY_HOVER,
-                          backgroundColor: selected ? PRIMARY : "#fff",
-                          fontWeight: 600,
-                          "&:hover": {
-                            backgroundColor: selected ? PRIMARY_HOVER : PRIMARY_LIGHT,
-                          },
-                        }}
-                      />
-                    );
-                  })}
-                </Box>
-              </Box>
-            )}
-
-            {/* Job Profile + Country */}
-            <Box display="flex" gap={2} mt={2}>
-              <TextField
-                label="Job Profile"
-                fullWidth
-                value={localData.job_profile}
-                onChange={handleFieldChange("job_profile")}
-                sx={fieldSx}
-              />
-              <TextField
-                label="Country"
-                fullWidth
-                value={localData.country}
-                onChange={handleFieldChange("country")}
-                sx={fieldSx}
-              />
-            </Box>
-
-            {/* Location + Notice Period */}
-            <Box display="flex" gap={2} mt={2}>
-              <TextField
-                label="Location"
-                fullWidth
-                value={localData.location}
-                onChange={handleFieldChange("location")}
-                sx={{ flex: 1, ...fieldSx }}
-              />
-              <Autocomplete
-                options={noticePeriodDaysList}
-                value={localData.notice_period_days}
-                onChange={handleAutoCompleteChange("notice_period_days")}
-                sx={{ flex: 1 }}
-                componentsProps={autocompletePaperProps}
-                renderInput={(params) => (
-                  <TextField {...params} label="Notice Period (Days)" sx={fieldSx} />
-                )}
-              />
-            </Box>
-
-            {/* Duration */}
-            <TextField
-              label="Duration"
-              fullWidth
-              sx={{ mt: 2, ...fieldSx }}
-              value={localData.duration}
-              onChange={handleFieldChange("duration")}
-            />
-
-            {/* Skills Used */}
-            <Box sx={{ mt: 2 }}>
-              <Autocomplete
-                multiple
-                freeSolo
-                options={availableSkills}
-                value={localData.skills_used || []}
-                onChange={handleSkillsChange}
-                getOptionLabel={(option) => option || ""}
-                componentsProps={autocompletePaperProps}
-                ChipProps={{ variant: "outlined", sx: skillChipSx }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Tech Skills"
-                    placeholder="Type to add custom skills or select from list"
-                    onKeyDown={handleCustomSkillAdd}
+          <>
+            {/* ── Role & Company ─────────────────────────────────────── */}
+            <Section icon={WorkOutlineOutlinedIcon} title="Role & Company">
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <Autocomplete
+                    options={employmentTypes}
+                    value={localData.employment_type || null}
+                    onChange={handleAutoCompleteChange("employment_type")}
                     size="small"
-                    sx={{
-                      "& .MuiOutlinedInput-root": {
-                        "& fieldset": { borderColor: PRIMARY },
-                        "&:hover fieldset": { borderColor: PRIMARY },
-                        "&.Mui-focused fieldset": { borderColor: PRIMARY },
-                        "& .MuiInputBase-input": {
-                          height: "20px",
-                        },
-                      },
-                      "& .MuiInputLabel-root.Mui-focused": { color: PRIMARY },
-                    }}
+                    componentsProps={autocompletePaperProps}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Employment Type" sx={fieldSx} />
+                    )}
                   />
-                )}
-              />
-            </Box>
-          </Box>
-        ) : (
-          <Box>
-            <Box sx={{ mt: 1 }}>
-              <Autocomplete
-                options={employmentTypes}
-                value={localData.previousEmployementType || ""}
-                onChange={handleAutoCompleteChange("previousEmployementType")}
-                componentsProps={autocompletePaperProps}
-                renderInput={(params) => (
-                  <TextField {...params} label="Employment Type" sx={fieldSx} />
-                )}
-              />
-            </Box>
-            <Box display="flex" gap={2} mt={2}>
-              <TextField
-                label="Previous Company Name"
-                fullWidth
-                value={localData.previousCompany}
-                onChange={handleFieldChange("previousCompany")}
-                sx={fieldSx}
-              />
-              <TextField
-                label="Previous Job Title"
-                fullWidth
-                value={localData.previousJobTitle}
-                onChange={handleFieldChange("previousJobTitle")}
-                sx={fieldSx}
-              />
-            </Box>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 4 }}>
+                  <Autocomplete
+                    options={totalYearsList}
+                    value={localData.total_exp_years || null}
+                    onChange={handleAutoCompleteChange("total_exp_years")}
+                    size="small"
+                    componentsProps={autocompletePaperProps}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Experience (Years)" sx={fieldSx} />
+                    )}
+                  />
+                </Grid>
+                <Grid size={{ xs: 6, sm: 4 }}>
+                  <Autocomplete
+                    options={totalMonths}
+                    value={localData.total_exp_months || null}
+                    onChange={handleAutoCompleteChange("total_exp_months")}
+                    size="small"
+                    componentsProps={autocompletePaperProps}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Experience (Months)" sx={fieldSx} />
+                    )}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label="Company Name"
+                    fullWidth
+                    size="small"
+                    value={localData.company_name}
+                    onChange={handleFieldChange("company_name")}
+                    sx={fieldSx}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label="Job Title"
+                    fullWidth
+                    size="small"
+                    value={localData.job_title}
+                    onChange={handleFieldChange("job_title")}
+                    sx={fieldSx}
+                  />
+                </Grid>
+                <LocalizationProvider dateAdapter={AdapterDateFns}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <DatePicker
+                      label="Start Date"
+                      value={localData.joining_date || null}
+                      onChange={(value) => {
+                        setLocalData((prev) => ({
+                          ...prev,
+                          joining_date: value,
+                          // clear end date if it's now before the new start date
+                          end_date:
+                            prev.end_date && value && new Date(prev.end_date) < new Date(value)
+                              ? null
+                              : prev.end_date,
+                        }));
+                      }}
+                      maxDate={localData.end_date ? new Date(localData.end_date) : undefined}
+                      slotProps={dateSlotProps}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <DatePicker
+                      label="End Date"
+                      value={localData.end_date || null}
+                      onChange={handleDateChange("end_date")}
+                      disabled={localData.is_current}
+                      minDate={localData.joining_date ? new Date(localData.joining_date) : undefined}
+                      slotProps={{
+                        ...dateSlotProps,
+                        textField: {
+                          ...dateSlotProps.textField,
+                          helperText: localData.is_current ? "Present (current role)" : "",
+                        },
+                      }}
+                    />
+                  </Grid>
+                </LocalizationProvider>
+              </Grid>
+            </Section>
 
-            {/* Start / End Date */}
-            <Box display="flex" gap={2} mt={2}>
-  <LocalizationProvider dateAdapter={AdapterDateFns}>
-    <DatePicker
-      sx={{ mt: -1, ...fieldSx }}
-      label="Joining Date"
-      value={localData.previousJoiningDate || null}
-      onChange={(value) => {
-        setLocalData((prev) => ({
-          ...prev,
-          previousJoiningDate: value,
-          previousEndingDate:
-            prev.previousEndingDate && value && new Date(prev.previousEndingDate) < new Date(value)
-              ? null
-              : prev.previousEndingDate,
-        }));
-      }}
-      maxDate={localData.previousEndingDate ? new Date(localData.previousEndingDate) : undefined}
-      slots={{ textField: TextField }}
-      slotProps={{
-        textField: { size: "medium", fullWidth: true },
-        popper: {
-          modifiers: [{ name: "offset", options: { offset: [0, 10] } }],
-          sx: { zIndex: 1300, backgroundColor: "white" },
-        },
-        day: { sx: datePickerDaySx },
-      }}
-    />
-  </LocalizationProvider>
-  <LocalizationProvider dateAdapter={AdapterDateFns}>
-    <DatePicker
-      sx={{ mt: -1, ...fieldSx }}
-      label="Ending Date"
-      value={localData.previousEndingDate || null}
-      onChange={handleDateChange("previousEndingDate")}
-      disabled={localData.isEmployed === "yes"}
-      minDate={localData.previousJoiningDate ? new Date(localData.previousJoiningDate) : undefined}
-      slots={{ textField: TextField }}
-      slotProps={{
-        textField: { size: "medium", fullWidth: true },
-        popper: {
-          modifiers: [{ name: "offset", options: { offset: [0, 10] } }],
-          sx: { zIndex: 1300, backgroundColor: "white" },
-        },
-        day: { sx: datePickerDaySx },
-      }}
-    />
-  </LocalizationProvider>
-</Box>
-            <Box display="flex" gap={2} mt={2}>
-              <TextField
-                label="Job Profile"
-                fullWidth
-                value={localData.previousJobProfile}
-                onChange={handleFieldChange("previousJobProfile")}
-                sx={fieldSx}
-              />
-            </Box>
-          </Box>
+            {/* ── Compensation ───────────────────────────────────────── */}
+            <Section icon={PaymentsOutlinedIcon} title="Compensation">
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 4, sm: 3 }}>
+                  <Autocomplete
+                    options={currencyOptions}
+                    value={localData.currency || "₹"}
+                    onChange={handleAutoCompleteChange("currency")}
+                    disableClearable
+                    size="small"
+                    componentsProps={autocompletePaperProps}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Currency" sx={fieldSx} />
+                    )}
+                  />
+                </Grid>
+                <Grid size={{ xs: 8, sm: 9 }}>
+                  <TextField
+                    label="Current Salary"
+                    fullWidth
+                    size="small"
+                    value={localData.current_salary}
+                    onChange={handleFieldChange("current_salary")}
+                    InputProps={currencyAdornment}
+                    helperText={
+                      localData.currency === "₹" && localData.current_salary
+                        ? numberToWordsIndian(localData.current_salary)
+                        : ""
+                    }
+                    FormHelperTextProps={{ sx: { color: "#2e7d32" } }}
+                    sx={fieldSx}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <Autocomplete
+                    options={salaryBreakdownList}
+                    value={localData.salary_breakdown || null}
+                    onChange={(e, value) =>
+                      setLocalData((prev) => ({
+                        ...prev,
+                        salary_breakdown: value,
+                        // reset dependent fields whenever the breakdown type changes
+                        fixed_salary: value === "Fixed" ? "" : prev.fixed_salary,
+                        variable_salary: value === "Fixed" ? "" : prev.variable_salary,
+                        stock_types:
+                          value === "Fixed + Variable + Stocks" ? prev.stock_types : [],
+                      }))
+                    }
+                    size="small"
+                    componentsProps={autocompletePaperProps}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Salary Breakdown"
+                        helperText={
+                          localData.salary_breakdown === "Fixed"
+                            ? "Your total salary has been considered as fixed component"
+                            : ""
+                        }
+                        FormHelperTextProps={{ sx: { color: "#2e7d32" } }}
+                        sx={fieldSx}
+                      />
+                    )}
+                  />
+                </Grid>
+
+                {(localData.salary_breakdown === "Fixed + Variable" ||
+                  localData.salary_breakdown === "Fixed + Variable + Stocks") && (
+                  <>
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <TextField
+                        label="Fixed Salary"
+                        fullWidth
+                        size="small"
+                        value={localData.fixed_salary}
+                        onChange={handleFieldChange("fixed_salary")}
+                        InputProps={currencyAdornment}
+                        sx={fieldSx}
+                      />
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 6 }}>
+                      <TextField
+                        label="Variable Salary"
+                        fullWidth
+                        size="small"
+                        placeholder="Eg. 45,765"
+                        value={localData.variable_salary}
+                        onChange={handleFieldChange("variable_salary")}
+                        InputProps={currencyAdornment}
+                        sx={fieldSx}
+                      />
+                    </Grid>
+                  </>
+                )}
+
+                {localData.salary_breakdown === "Fixed + Variable + Stocks" && (
+                  <Grid size={{ xs: 12 }}>
+                    <Typography sx={{ fontSize: 12.5, color: MUTED, mb: 0.75 }}>
+                      Type of stocks
+                    </Typography>
+                    <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                      {stockTypeOptions.map((type) => {
+                        const selected = localData.stock_types.includes(type);
+                        return (
+                          <Chip
+                            key={type}
+                            label={selected ? `✓ ${type}` : type}
+                            onClick={() => toggleStockType(type)}
+                            variant="outlined"
+                            sx={{
+                              borderRadius: "9px",
+                              borderColor: selected ? PRIMARY : LINE,
+                              color: selected ? PRIMARY_HOVER : "#4B5563",
+                              backgroundColor: "#fff",
+                              fontWeight: selected ? 700 : 500,
+                              boxShadow: selected ? `0 0 0 3px ${PRIMARY_LIGHT}` : "none",
+                              "&:hover": { borderColor: PRIMARY, backgroundColor: "#fff" },
+                            }}
+                          />
+                        );
+                      })}
+                    </Box>
+                  </Grid>
+                )}
+              </Grid>
+            </Section>
+
+            {/* ── Location & Availability ────────────────────────────── */}
+            <Section icon={PlaceOutlinedIcon} title="Location & Availability">
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label="Country"
+                    fullWidth
+                    size="small"
+                    value={localData.country}
+                    onChange={handleFieldChange("country")}
+                    sx={fieldSx}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label="Location"
+                    fullWidth
+                    size="small"
+                    value={localData.location}
+                    onChange={handleFieldChange("location")}
+                    sx={fieldSx}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <Autocomplete
+                    options={noticePeriodDaysList}
+                    value={localData.notice_period_days || null}
+                    onChange={handleAutoCompleteChange("notice_period_days")}
+                    size="small"
+                    componentsProps={autocompletePaperProps}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Notice Period" sx={fieldSx} />
+                    )}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label="Duration"
+                    fullWidth
+                    size="small"
+                    value={localData.duration}
+                    onChange={handleFieldChange("duration")}
+                    sx={fieldSx}
+                  />
+                </Grid>
+              </Grid>
+            </Section>
+
+            {/* ── Skills & Responsibilities ──────────────────────────── */}
+            <Section icon={ExtensionOutlinedIcon} title="Skills & Responsibilities">
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 12 }}>
+                  <Autocomplete
+                    multiple
+                    freeSolo
+                    options={availableSkills}
+                    value={localData.skills_used || []}
+                    onChange={handleSkillsChange}
+                    getOptionLabel={(option) => option || ""}
+                    size="small"
+                    componentsProps={autocompletePaperProps}
+                    ChipProps={{ variant: "outlined", size: "small", sx: skillChipSx }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        label="Tech Skills"
+                        placeholder="Type to add or pick from list"
+                        onKeyDown={handleCustomSkillAdd}
+                        sx={fieldSx}
+                      />
+                    )}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  {renderKeyResponsibilities()}
+                </Grid>
+              </Grid>
+            </Section>
+          </>
+        ) : (
+          <>
+            {/* ── Role & Company (previous) ──────────────────────────── */}
+            <Section icon={WorkOutlineOutlinedIcon} title="Role & Company">
+              <Grid container spacing={1.5}>
+                <Grid size={{ xs: 12 }}>
+                  <Autocomplete
+                    options={employmentTypes}
+                    value={localData.previousEmployementType || null}
+                    onChange={handleAutoCompleteChange("previousEmployementType")}
+                    size="small"
+                    componentsProps={autocompletePaperProps}
+                    renderInput={(params) => (
+                      <TextField {...params} label="Employment Type" sx={fieldSx} />
+                    )}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label="Company Name"
+                    fullWidth
+                    size="small"
+                    value={localData.previousCompany}
+                    onChange={handleFieldChange("previousCompany")}
+                    sx={fieldSx}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    label="Job Title"
+                    fullWidth
+                    size="small"
+                    value={localData.previousJobTitle}
+                    onChange={handleFieldChange("previousJobTitle")}
+                    sx={fieldSx}
+                  />
+                </Grid>
+                <LocalizationProvider dateAdapter={AdapterDateFns}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <DatePicker
+                      label="Joining Date"
+                      value={localData.previousJoiningDate || null}
+                      onChange={(value) => {
+                        setLocalData((prev) => ({
+                          ...prev,
+                          previousJoiningDate: value,
+                          previousEndingDate:
+                            prev.previousEndingDate &&
+                            value &&
+                            new Date(prev.previousEndingDate) < new Date(value)
+                              ? null
+                              : prev.previousEndingDate,
+                        }));
+                      }}
+                      maxDate={
+                        localData.previousEndingDate
+                          ? new Date(localData.previousEndingDate)
+                          : undefined
+                      }
+                      slotProps={dateSlotProps}
+                    />
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <DatePicker
+                      label="Ending Date"
+                      value={localData.previousEndingDate || null}
+                      onChange={handleDateChange("previousEndingDate")}
+                      minDate={
+                        localData.previousJoiningDate
+                          ? new Date(localData.previousJoiningDate)
+                          : undefined
+                      }
+                      slotProps={dateSlotProps}
+                    />
+                  </Grid>
+                </LocalizationProvider>
+              </Grid>
+            </Section>
+
+            {/* ── Responsibilities (previous) ────────────────────────── */}
+            <Section icon={ExtensionOutlinedIcon} title="Responsibilities">
+              {renderKeyResponsibilities()}
+            </Section>
+          </>
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, py: 2, borderTop: "1px solid #f0f0f0" }}>
+      <DialogActions sx={{ p: 2 }}>
         <Button
           onClick={() => setOpen(false)}
           variant="outlined"
-          sx={{ borderRadius: "10px", px: 3 }}
+          sx={{ borderColor: LINE, color: INK, textTransform: "none" }}
         >
           Cancel
         </Button>
@@ -956,15 +996,10 @@ const AddEmployment = ({
           onClick={handleSave}
           variant="contained"
           sx={{
-            background: `linear-gradient(135deg, ${PRIMARY}, ${PRIMARY_HOVER})`,
-            color: "#fff",
-            borderRadius: "10px",
-            px: 4,
+            bgcolor: PRIMARY,
             textTransform: "none",
             fontWeight: 600,
-            "&:hover": {
-              background: `linear-gradient(135deg, ${PRIMARY_HOVER}, ${PRIMARY_HOVER})`,
-            },
+            "&:hover": { bgcolor: PRIMARY_HOVER },
           }}
         >
           {editingIndex !== null ? "Save Changes" : "Add Employment"}

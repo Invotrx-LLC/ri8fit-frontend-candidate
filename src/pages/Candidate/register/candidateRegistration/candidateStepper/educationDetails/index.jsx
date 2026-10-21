@@ -80,28 +80,35 @@ const autocompletePaperSx = {
 };
 const popupSlotProps = { paper: { sx: autocompletePaperSx } };
 
-const qualifications = ["Graduation/Diploma", "Post Graduation", "Doctorate"];
-const courses = [
-  "B.Tech/B.E.",
-  "M.Tech",
-  "MBA",
-  "Ph.D.",
-  "MCA",
-  "BCA",
-  "BBA",
-  "B.Sc",
-  "B.A.",
-  "B.Com",
-  "MSc Biotechnology",
-];
+/* Qualification → Course → Specialization all come from the dropdown APIs:
+   GET /dropdown/education-levels
+   GET /dropdown/courses?education_level=…
+   GET /dropdown/specializations?education_level=…&course=… */
 const courseTypes = ["Full Time", "Part Time", "Distance Learning"];
-const specializations = [
-  "Computers",
-  "Mechanical",
-  "Electronics",
-  "Civil",
-  "Biotechnology",
-];
+
+const authHeaders = () => {
+  const token = getItem(CANDIDATE_ACCESS_TOKEN) || getItem(ACCESS_TOKEN);
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+/* These APIs return a plain string array; also tolerates { data: [...] } / object items */
+const toStringList = (res) => {
+  const list = [res?.data, res?.data?.data, res].find(Array.isArray) || [];
+  return list
+    .map((x) => (typeof x === "string" ? x : x?.label ?? x?.value ?? x?.name ?? ""))
+    .filter(Boolean);
+};
+
+/* Fetches a dropdown list; returns [] on failure so the page never breaks */
+const fetchOptions = async (url, params) => {
+  try {
+    const res = await candidateApi.get(url, { params, headers: authHeaders() });
+    return toStringList(res);
+  } catch (error) {
+    console.error(`Dropdown API failed: ${url}`, error);
+    return [];
+  }
+};
 const universities = [
   "National Institute of Technology",
   "Indian Institute of Technology",
@@ -181,7 +188,7 @@ const EducationalPage = ({
   // State ordered to match the API payload
   const [localData, setLocalData] = useState({
     educationId: null,
-    qualification: "Graduation/Diploma", // education_level
+    qualification: "", // education_level — picked from /dropdown/education-levels
     university: "",
     course: "",
     specialization: "",
@@ -192,6 +199,66 @@ const EducationalPage = ({
     marks: "",
   });
   const [loading, setLoading] = useState(false);
+
+  // Cascading dropdown options
+  const [educationLevels, setEducationLevels] = useState([]);
+  const [courseOptions, setCourseOptions] = useState([]);
+  const [specializationOptions, setSpecializationOptions] = useState([]);
+  const [levelsLoading, setLevelsLoading] = useState(true);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [specsLoading, setSpecsLoading] = useState(false);
+
+  // 1. Qualification list — loaded once
+  useEffect(() => {
+    let active = true;
+    fetchOptions("/dropdown/education-levels").then((list) => {
+      if (!active) return;
+      setEducationLevels(list);
+      setLevelsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // 2. Courses — reload whenever the qualification changes
+  useEffect(() => {
+    if (!localData.qualification) {
+      setCourseOptions([]);
+      return;
+    }
+    let active = true;
+    setCoursesLoading(true);
+    fetchOptions("/dropdown/courses", { education_level: localData.qualification }).then((list) => {
+      if (!active) return;
+      setCourseOptions(list);
+      setCoursesLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [localData.qualification]);
+
+  // 3. Specializations — reload whenever qualification or course changes
+  useEffect(() => {
+    if (!localData.qualification || !localData.course) {
+      setSpecializationOptions([]);
+      return;
+    }
+    let active = true;
+    setSpecsLoading(true);
+    fetchOptions("/dropdown/specializations", {
+      education_level: localData.qualification,
+      course: localData.course,
+    }).then((list) => {
+      if (!active) return;
+      setSpecializationOptions(list);
+      setSpecsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [localData.qualification, localData.course]);
 
   // Populates Redux with resume_data if this step is opened before any
   // earlier step has already fetched it. Guarded so it only runs once.
@@ -217,7 +284,7 @@ const EducationalPage = ({
     if (!Object.keys(edu).length) return;
     setLocalData({
       educationId: edu.id ?? null,
-      qualification: edu.education_level || "Graduation/Diploma",
+      qualification: edu.education_level || "",
       university: edu.university || "",
       course: edu.course || "",
       specialization: edu.specialization || "",
@@ -239,6 +306,14 @@ const EducationalPage = ({
   const handleAutoCompleteChange = (key) => (_event, value) => {
     setLocalData((prev) => {
       const next = { ...prev, [key]: value || "" };
+      // A new parent selection makes the child values invalid — clear them
+      if (key === "qualification" && value !== prev.qualification) {
+        next.course = "";
+        next.specialization = "";
+      }
+      if (key === "course" && value !== prev.course) {
+        next.specialization = "";
+      }
       // If the new start year is at or after the current end year,
       // the end year is no longer valid — clear it.
       if (
@@ -366,8 +441,8 @@ const EducationalPage = ({
         <Grid container spacing={2}>
           <Grid item size={{ xs: 12, sm: 6 }}>
             <Autocomplete
-              freeSolo
-              options={qualifications}
+              options={educationLevels}
+              loading={levelsLoading}
               value={localData.qualification || null}
               onChange={handleAutoCompleteChange("qualification")}
               size="small"
@@ -398,27 +473,41 @@ const EducationalPage = ({
         <Grid container spacing={2}>
           <Grid item size={{ xs: 12, sm: 6 }}>
             <Autocomplete
-              freeSolo
-              options={courses}
+              options={courseOptions}
+              loading={coursesLoading}
+              disabled={!localData.qualification}
               value={localData.course || null}
               onChange={handleAutoCompleteChange("course")}
               size="small"
               slotProps={popupSlotProps}
+              noOptionsText="No courses for this qualification"
               renderInput={(params) => (
-                <TextField {...params} label="Course" sx={fieldSx} />
+                <TextField
+                  {...params}
+                  label="Course"
+                  helperText={!localData.qualification ? "Select a qualification first" : ""}
+                  sx={fieldSx}
+                />
               )}
             />
           </Grid>
           <Grid item size={{ xs: 12, sm: 6 }}>
             <Autocomplete
-              freeSolo
-              options={specializations}
+              options={specializationOptions}
+              loading={specsLoading}
+              disabled={!localData.course}
               value={localData.specialization || null}
               onChange={handleAutoCompleteChange("specialization")}
               size="small"
               slotProps={popupSlotProps}
+              noOptionsText="No specializations for this course"
               renderInput={(params) => (
-                <TextField {...params} label="Specialization" sx={fieldSx} />
+                <TextField
+                  {...params}
+                  label="Specialization"
+                  helperText={!localData.course ? "Select a course first" : ""}
+                  sx={fieldSx}
+                />
               )}
             />
           </Grid>

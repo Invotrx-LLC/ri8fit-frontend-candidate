@@ -21,6 +21,8 @@ import PhoneOutlinedIcon from "@mui/icons-material/PhoneOutlined";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import HourglassEmptyIcon from "@mui/icons-material/HourglassEmpty";
+import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
+import NotesOutlinedIcon from "@mui/icons-material/NotesOutlined";
 import { AppContext } from "../../../../AppContext";
 import {
   useGetCandidateProfileImageQuery,
@@ -41,9 +43,18 @@ const InfoRow = ({ icon, children, verified }) => (
   </Box>
 );
 
+/* Same group heading as the Personal Details dialog */
+const GroupHeading = ({ icon: Icon, title }) => (
+  <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1.25 }}>
+    <Icon sx={{ fontSize: 17, color: palette.teal }} />
+    <Typography sx={{ fontFamily: fonts.display, fontWeight: 600, fontSize: 14, color: palette.ink }}>
+      {title}
+    </Typography>
+  </Box>
+);
+
 const dialogFieldSx = {
   "& .MuiOutlinedInput-root": {
-    borderRadius: "8px",
     "& fieldset": { borderColor: palette.line },
     "&:hover fieldset": { borderColor: palette.teal },
     "&.Mui-focused fieldset": { borderColor: palette.teal },
@@ -341,7 +352,7 @@ function BasicInformation({ candidateInfo, completeDetailsApi }) {
 
         {/* ── Two-column info grid ── */}
         <Grid container spacing={3}>
-          <Grid item xs={12} sm={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <InfoRow icon={<LocationOnOutlinedIcon sx={{ fontSize: 18 }} />}>
               {basicInfo.city}
               {basicInfo.city && basicInfo.country ? ", " : ""}
@@ -362,7 +373,7 @@ function BasicInformation({ candidateInfo, completeDetailsApi }) {
             </InfoRow>
           </Grid>
 
-          <Grid item xs={12} sm={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <InfoRow icon={<EmailOutlined sx={{ fontSize: 18 }} />} verified>
               {basicInfo.email || "—"}
             </InfoRow>
@@ -411,133 +422,151 @@ function BasicInformation({ candidateInfo, completeDetailsApi }) {
         )}
       </Box>
 
-      {/* ── Edit Dialog ── */}
+      {/* ── Edit Dialog — same design as the Personal Details dialog ── */}
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        maxWidth="md"
+        maxWidth="sm"
         fullWidth
-        PaperProps={{ sx: { borderRadius: "14px", overflow: "hidden" } }}
+        PaperProps={{ sx: { borderRadius: "14px" } }}
       >
-        <DialogTitle
-          sx={{
-            background: `linear-gradient(90deg, ${palette.teal}, ${palette.tealDeep})`,
-            color: "#fff",
-            fontFamily: fonts.display,
-            fontWeight: 600,
-            position: "relative",
-          }}
-        >
+        <DialogTitle sx={{ fontFamily: fonts.display, fontWeight: 600, color: palette.ink }}>
           Edit Information
           <IconButton
             onClick={() => setOpen(false)}
-            sx={{ position: "absolute", right: 12, top: 12, color: "#fff" }}
+            sx={{ position: "absolute", right: 8, top: 8, color: palette.teal }}
           >
             <GridCloseIcon />
           </IconButton>
         </DialogTitle>
 
-        <DialogContent sx={{ bgcolor: palette.canvas, pt: 3 }}>
-          <Grid container spacing={2.5} mt={1}>
-            <Grid item size={{ xs: 12, md: 6 }}>
+        <DialogContent dividers>
+          {/* ── Basic Info ─────────────────────────────────────────────── */}
+          <GroupHeading icon={BadgeOutlinedIcon} title="Basic Info" />
+          <Grid container spacing={1.5}>
+            <Grid size={{ xs: 12 }}>
               <TextField
                 fullWidth
+                size="small"
                 label="Full Name"
                 name="full_name"
-                InputLabelProps={{ shrink: true }}
-                value={basicInfo.full_name}
-                onChange={handleChange}
-                sx={dialogFieldSx}
-              />
-            </Grid>
-            <Grid item size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Notice Period (Days)"
-                name="notice_period_days"
-                type="number"
-                value={basicInfo.notice_period_days}
-                onChange={handleChange}
-                sx={dialogFieldSx}
-              />
-            </Grid>
-            <Grid item size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Company Name"
-                name="company_name"
-                value={basicInfo.company_name}
-                onChange={handleChange}
-                sx={dialogFieldSx}
-              />
-            </Grid>
-            <Grid item size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Designation"
-                name="designation"
-                value={basicInfo.designation}
-                onChange={handleChange}
-                sx={dialogFieldSx}
-              />
-            </Grid>
-            <Grid item size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="City"
-                name="city"
-                value={basicInfo.city}
-                onChange={handleChange}
-                sx={dialogFieldSx}
-              />
-            </Grid>
-            <Grid item size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Country"
-                name="country"
-                value={basicInfo.country}
-                onChange={handleChange}
-                sx={dialogFieldSx}
-              />
-            </Grid>
-            {/* <Grid item size={{ xs: 12, md: 6 }}>
-              <TextField
-                fullWidth
-                label="Qualification"
-                name="qualification"
-                value={basicInfo.qualification}
-                onChange={handleChange}
-                sx={dialogFieldSx}
-              />
-            </Grid> */}
-            <Grid item size={{ xs: 12 }}>
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                label="Professional Summary"
-                name="summary"
-                value={basicInfo.summary}
+                value={basicInfo.full_name || ""}
                 onChange={handleChange}
                 sx={dialogFieldSx}
               />
             </Grid>
           </Grid>
+
+          {/* ── Current Role ───────────────────────────────────────────── */}
+          <Box sx={{ mt: 3 }}>
+            <Divider sx={{ mb: 2, borderColor: palette.line }} />
+            <GroupHeading icon={WorkOutlineIcon} title="Current Role" />
+            <Grid container spacing={1.5}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Company Name"
+                  name="company_name"
+                  value={basicInfo.company_name || ""}
+                  onChange={handleChange}
+                  sx={dialogFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Designation"
+                  name="designation"
+                  value={basicInfo.designation || ""}
+                  onChange={handleChange}
+                  sx={dialogFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Notice Period (Days)"
+                  name="notice_period_days"
+                  type="number"
+                  inputProps={{ min: 0 }}
+                  value={basicInfo.notice_period_days ?? ""}
+                  onChange={handleChange}
+                  helperText="Enter 0 if you can join immediately"
+                  sx={dialogFieldSx}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* ── Location ───────────────────────────────────────────────── */}
+          <Box sx={{ mt: 3 }}>
+            <Divider sx={{ mb: 2, borderColor: palette.line }} />
+            <GroupHeading icon={LocationOnOutlinedIcon} title="Location" />
+            <Grid container spacing={1.5}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="City"
+                  name="city"
+                  value={basicInfo.city || ""}
+                  onChange={handleChange}
+                  sx={dialogFieldSx}
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Country"
+                  name="country"
+                  value={basicInfo.country || ""}
+                  onChange={handleChange}
+                  sx={dialogFieldSx}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* ── About ──────────────────────────────────────────────────── */}
+          <Box sx={{ mt: 3 }}>
+            <Divider sx={{ mb: 2, borderColor: palette.line }} />
+            <GroupHeading icon={NotesOutlinedIcon} title="About" />
+            <TextField
+              fullWidth
+              size="small"
+              multiline
+              minRows={4}
+              label="Professional Summary"
+              name="summary"
+              placeholder="A short summary of your experience and strengths"
+              value={basicInfo.summary || ""}
+              onChange={handleChange}
+              sx={dialogFieldSx}
+            />
+          </Box>
         </DialogContent>
 
-        <DialogActions sx={{ bgcolor: palette.canvas, p: 2.5 }}>
+        <DialogActions sx={{ p: 2 }}>
           <Button
             variant="outlined"
             onClick={() => setOpen(false)}
-            sx={{ borderColor: palette.line, color: palette.ink, textTransform: "none", "&:hover": { borderColor: palette.teal } }}
+            sx={{ borderColor: palette.line, color: palette.ink, textTransform: "none" }}
           >
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={handleUpdate}
-            sx={{ bgcolor: palette.teal, textTransform: "none", "&:hover": { bgcolor: palette.tealDeep } }}
+            sx={{
+              bgcolor: palette.teal,
+              textTransform: "none",
+              fontWeight: 600,
+              "&:hover": { bgcolor: palette.tealDeep },
+            }}
           >
             Update Profile
           </Button>
