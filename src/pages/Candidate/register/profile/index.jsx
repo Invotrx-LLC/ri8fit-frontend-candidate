@@ -229,6 +229,35 @@ const availabilityMap = {
   "3_months": "4",
 };
 
+/* Function / Position type apply only to the Clinical domain */
+const isClinicalDomain = (d) => String(d || "").trim().toLowerCase() === "clinical";
+
+/* Option lists for the two selects (value → label) */
+const domainOptions = [
+  { value: "Clinical", label: "Clinical" },
+  { value: "Non-Clinical", label: "Non-Clinical" },
+];
+const availabilityOptions = [
+  { value: "immediate", label: "Immediate" },
+  { value: "2_weeks", label: "2 Weeks" },
+  { value: "1_month", label: "1 Month" },
+  { value: "2_months", label: "2 Months" },
+  { value: "3_months", label: "3 Months" },
+];
+
+/* Select props: grey placeholder when empty, the option label once chosen */
+const selectPlaceholder = (text, options) => ({
+  displayEmpty: true,
+  renderValue: (v) =>
+    v ? (
+      options.find((o) => o.value === v)?.label ?? v
+    ) : (
+      <Typography component="span" sx={{ fontSize: "13px", color: "#9C9C9C" }}>
+        {text}
+      </Typography>
+    ),
+});
+
 /* ── shared field style — teal focus ────────────────────────────────────── */
 const fieldSx = {
   "& .MuiOutlinedInput-root": {
@@ -474,10 +503,13 @@ const CandidateProfile = () => {
       temp.phone_number = "Valid phone number required";
     if (!safeFormData.resume) temp.resume = "Resume is required";
     if (!safeFormData.domain) temp.domain = "Domain is required";
-    if (!safeFormData.area_of_interest)
-      temp.area_of_interest = "Function is required";
-    if (!safeFormData.position_role)
-      temp.position_role = "Position type is required";
+    // Function / Position type are asked only for the Clinical domain
+    if (isClinicalDomain(safeFormData.domain)) {
+      if (!safeFormData.area_of_interest)
+        temp.area_of_interest = "Function is required";
+      if (!safeFormData.position_role)
+        temp.position_role = "Position type is required";
+    }
     if (!safeFormData.availability)
       temp.availability = "Availability is required";
     return temp;
@@ -523,8 +555,9 @@ const CandidateProfile = () => {
       fd.append("phone_number", rawPhone);
       fd.append("availability", availabilityMap[safeFormData.availability] ?? "");
       fd.append("domain", safeFormData.domain || "");
-      fd.append("position_role", safeFormData.area_of_interest || "");
-      fd.append("area_of_interest", safeFormData.position_role || "");
+      const clinical = isClinicalDomain(safeFormData.domain);
+      fd.append("position_role", clinical ? safeFormData.area_of_interest || "" : "");
+      fd.append("area_of_interest", clinical ? safeFormData.position_role || "" : "");
       if (safeFormData.resume instanceof File) {
         fd.append("resume", safeFormData.resume);
       }
@@ -862,88 +895,119 @@ const CandidateProfile = () => {
                   size="small"
                   value={safeFormData.domain || ""}
                   onChange={(e) => {
-                    setFormData({ ...safeFormData, domain: e.target.value });
-                    setErrors((p) => ({ ...p, domain: null }));
+                    const domain = e.target.value;
+                    const clinical = isClinicalDomain(domain);
+                    // Leaving Clinical clears Function / Position type
+                    if (!clinical) {
+                      setSelectedFunction(null);
+                      setSelectedSubFunction(null);
+                      setSubFunctionOptions([]);
+                    }
+                    setFormData({
+                      ...safeFormData,
+                      domain,
+                      ...(clinical ? {} : { area_of_interest: "", position_role: "" }),
+                    });
+                    setErrors((p) => ({
+                      ...p,
+                      domain: null,
+                      ...(clinical ? {} : { area_of_interest: null, position_role: null }),
+                    }));
                   }}
+                  SelectProps={selectPlaceholder("Select Domain", domainOptions)}
                   error={!!errors.domain}
-                  helperText={errors.domain}
+                  helperText={
+                    errors.domain ||
+                    (isClinicalDomain(safeFormData.domain)
+                      )
+                  }
+                  FormHelperTextProps={{
+                    sx: { color: errors.domain ? undefined : "#6B7280", ml: 0 },
+                  }}
                   sx={fieldSx}
                 >
                   {/* TODO: confirm the real option list/values with backend */}
-                  <MenuItem value="Clinical">Clinical</MenuItem>
-                  <MenuItem value="Non-Clinical">Non-Clinical</MenuItem>
+                  {domainOptions.map((o) => (
+                    <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                  ))}
                 </TextField>
               </Box>
 
-              {/* Function -> submitted as area_of_interest */}
-              <Box>
-                <Typography sx={{ fontSize: "12px", color: "#555", mb: 0.5 }}>
-                  Function
-                </Typography>
-                <Autocomplete
-                  options={functionOptions}
-                  value={selectedFunction}
-                  onChange={(_, v) => {
-                    setSelectedFunction(v);
-                    setSelectedSubFunction(null);
-                    setFormData({
-                      ...safeFormData,
-                      area_of_interest: v?.function_key || "",
-                      position_role: "",
-                    });
-                    setErrors((p) => ({ ...p, area_of_interest: null }));
-                  }}
-                  getOptionLabel={(o) => o?.function_label || ""}
-                  isOptionEqualToValue={(o, v) =>
-                    o.function_key === v?.function_key
-                  }
-                  loading={functionLoading}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Enter Function here"
-                      size="small"
-                      error={!!errors.area_of_interest}
-                      helperText={errors.area_of_interest}
-                      sx={fieldSx}
-                    />
-                  )}
-                />
-              </Box>
+              {/* Function & Position type — only for the Clinical domain */}
+              {isClinicalDomain(safeFormData.domain) && (
+                <>
+                {/* Function -> submitted as area_of_interest */}
+                <Box>
+                  <Typography sx={{ fontSize: "12px", color: "#555", mb: 0.5 }}>
+                    Function
+                  </Typography>
+                  <Autocomplete
+                    options={functionOptions}
+                    value={selectedFunction}
+                    onChange={(_, v) => {
+                      setSelectedFunction(v);
+                      setSelectedSubFunction(null);
+                      setFormData({
+                        ...safeFormData,
+                        area_of_interest: v?.function_key || "",
+                        position_role: "",
+                      });
+                      setErrors((p) => ({ ...p, area_of_interest: null }));
+                    }}
+                    getOptionLabel={(o) => o?.function_label || ""}
+                    isOptionEqualToValue={(o, v) =>
+                      o.function_key === v?.function_key
+                    }
+                    loading={functionLoading}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        placeholder="Enter Function here"
+                        size="small"
+                        error={!!errors.area_of_interest}
+                        helperText={errors.area_of_interest}
+                        sx={fieldSx}
+                      />
+                    )}
+                  />
+                </Box>
 
-              {/* Position Type -> submitted as position_role */}
-              <Box>
-                <Typography sx={{ fontSize: "12px", color: "#555", mb: 0.5 }}>
-                  Position type
-                </Typography>
-                <Autocomplete
-                  options={subFunctionOptions}
-                  value={selectedSubFunction}
-                  onChange={(_, v) => {
-                    setSelectedSubFunction(v);
-                    setFormData({
-                      ...safeFormData,
-                      position_role: v?.sub_function_key || "",
-                    });
-                    setErrors((p) => ({ ...p, position_role: null }));
-                  }}
-                  getOptionLabel={(o) => o?.sub_function_label || ""}
-                  isOptionEqualToValue={(o, v) =>
-                    o.sub_function_key === v?.sub_function_key
-                  }
-                  loading={subFunctionLoading}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      placeholder="Enter Sub-Function here"
-                      size="small"
-                      error={!!errors.position_role}
-                      helperText={errors.position_role}
-                      sx={fieldSx}
-                    />
-                  )}
-                />
-              </Box>
+                {/* Position Type -> submitted as position_role */}
+                <Box>
+                  <Typography sx={{ fontSize: "12px", color: "#555", mb: 0.5 }}>
+                    Position type
+                  </Typography>
+                  <Autocomplete
+                    options={subFunctionOptions}
+                    value={selectedSubFunction}
+                    onChange={(_, v) => {
+                      setSelectedSubFunction(v);
+                      setFormData({
+                        ...safeFormData,
+                        position_role: v?.sub_function_key || "",
+                      });
+                      setErrors((p) => ({ ...p, position_role: null }));
+                    }}
+                    getOptionLabel={(o) => o?.sub_function_label || ""}
+                    isOptionEqualToValue={(o, v) =>
+                      o.sub_function_key === v?.sub_function_key
+                    }
+                    loading={subFunctionLoading}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        placeholder="Enter Sub-Function here"
+                        size="small"
+                        error={!!errors.position_role}
+                        helperText={errors.position_role}
+                        sx={fieldSx}
+                      />
+                    )}
+                  />
+                </Box>
+
+                </>
+              )}
 
               {/* Availability — full width, own row */}
               <Box sx={{ gridColumn: "1 / -1" }}>
@@ -962,15 +1026,17 @@ const CandidateProfile = () => {
                     });
                     setErrors((p) => ({ ...p, availability: null }));
                   }}
+                  SelectProps={selectPlaceholder("Select Availability", availabilityOptions)}
                   error={!!errors.availability}
-                  helperText={errors.availability}
+                  helperText={errors.availability || "Select how soon you can join"}
+                  FormHelperTextProps={{
+                    sx: { color: errors.availability ? undefined : "#6B7280", ml: 0 },
+                  }}
                   sx={fieldSx}
                 >
-                  <MenuItem value="immediate">Immediate</MenuItem>
-                  <MenuItem value="2_weeks">2 Weeks</MenuItem>
-                  <MenuItem value="1_month">1 Month</MenuItem>
-                  <MenuItem value="2_months">2 Months</MenuItem>
-                  <MenuItem value="3_months">3 Months</MenuItem>
+                  {availabilityOptions.map((o) => (
+                    <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                  ))}
                 </TextField>
               </Box>
             </Box>
@@ -1096,7 +1162,7 @@ const CandidateProfile = () => {
                     color: "#1F2937",
                   }}
                 >
-                  Upload Your Resume
+                  Upload Your Resume in PDF
                 </Typography>
 
                 <Typography
@@ -1145,7 +1211,7 @@ const CandidateProfile = () => {
                     color: "#98A2B3",
                   }}
                 >
-                  Supports PDF, DOC, DOCX (Max 5 MB)
+                 Upload Only PDF Max file size 5MB.
                 </Typography>
               </Box>
             )}

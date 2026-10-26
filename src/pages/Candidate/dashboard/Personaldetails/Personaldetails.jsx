@@ -17,6 +17,8 @@ import {
   Autocomplete,
   Divider,
   Checkbox,
+  Chip,
+  Tooltip,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import BadgeOutlinedIcon from "@mui/icons-material/BadgeOutlined";
@@ -31,6 +33,7 @@ import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
 import EventAvailableOutlinedIcon from "@mui/icons-material/EventAvailableOutlined";
 import WorkOutlineOutlinedIcon from "@mui/icons-material/WorkOutlineOutlined";
 import LinkOutlinedIcon from "@mui/icons-material/LinkOutlined";
+import TranslateOutlinedIcon from "@mui/icons-material/TranslateOutlined";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { DatePicker } from "@mui/x-date-pickers/DatePicker";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
@@ -47,7 +50,10 @@ import {
 import { palette, fonts } from "../../../../theme/candidateTokens";
 
 const genders = ["Male", "Female", "Other"];
-const maritalOptions = ["Married", "Unmarried"];
+const maritalOptions = ["Married", "Single", "Divorced", "Other"];
+/* Languages — most common for our candidates first, then A–Z.
+   Not in the list? The field also accepts a typed language (press Enter). */
+const languageOptions = ["English", "Hindi", "Telugu", "Tamil", "Kannada", "Malayalam", "Marathi", "Bengali", "Gujarati", "Punjabi", "Odia", "Urdu", "Afrikaans", "Albanian", "American Sign Language", "Amharic", "Arabic", "Armenian", "Assamese", "Awadhi", "Azerbaijani", "Basque", "Belarusian", "Bhojpuri", "Bodo", "Bosnian", "British Sign Language", "Bulgarian", "Burmese", "Cantonese", "Catalan", "Cebuano", "Chhattisgarhi", "Croatian", "Czech", "Danish", "Dari", "Dhivehi", "Dogri", "Dutch", "Dzongkha", "Esperanto", "Estonian", "Ewe", "Fijian", "Filipino (Tagalog)", "Finnish", "Flemish", "French", "Fula", "Galician", "Garhwali", "Garo", "Georgian", "German", "Greek", "Haryanvi", "Hausa", "Hawaiian", "Hebrew", "Hungarian", "Icelandic", "Igbo", "Indian Sign Language", "Indonesian", "Irish", "Italian", "Japanese", "Javanese", "Kashmiri", "Kazakh", "Khasi", "Khmer", "Kinyarwanda", "Kirundi", "Kokborok", "Konkani", "Korean", "Kumaoni", "Kurdish", "Kyrgyz", "Lao", "Latin", "Latvian", "Lingala", "Lithuanian", "Luganda", "Luxembourgish", "Macedonian", "Magahi", "Maithili", "Malagasy", "Malay", "Maltese", "Mandarin Chinese", "Manipuri", "Maori", "Mizo", "Moldovan", "Mongolian", "Nepali", "Norwegian", "Oromo", "Pashto", "Persian", "Polish", "Portuguese", "Rajasthani", "Romanian", "Russian", "Samoan", "Sanskrit", "Santali", "Scottish Gaelic", "Serbian", "Sesotho", "Setswana", "Shona", "Sindhi", "Sinhala", "Slovak", "Slovenian", "Somali", "Spanish", "Sundanese", "Swahili", "Swedish", "Tajik", "Thai", "Tigrinya", "Tongan", "Tulu", "Turkish", "Turkmen", "Twi", "Ukrainian", "Uzbek", "Vietnamese", "Welsh", "Wolof", "Xhosa", "Yiddish", "Yoruba", "Zulu"];
 const isUSA = (value) =>
   value?.trim().toLowerCase() === "united states";
 
@@ -69,6 +75,60 @@ const multiChipSx = {
     color: palette.teal,
     "&:hover": { color: palette.tealDeep },
   },
+};
+
+/* ── Multi-select chips: one line, max 4 chips, rest as "+N more" ────────────
+   Hovering "+N more" lists the hidden items. The field keeps its normal
+   single-line height whether it is focused or not. */
+const MAX_VISIBLE_CHIPS = 4;
+const singleLineMultiSx = {
+  "& .MuiAutocomplete-inputRoot": {
+    flexWrap: "nowrap !important",
+    overflow: "hidden",
+  },
+  "& .MuiAutocomplete-input": { minWidth: "40px !important" },
+};
+const renderLimitedTags = (getLabel, chipSx) => (value, getTagProps) => {
+  const shown = value.slice(0, MAX_VISIBLE_CHIPS);
+  const hidden = value.slice(MAX_VISIBLE_CHIPS);
+  return [
+    ...shown.map((item, index) => {
+      const { key, ...tagProps } = getTagProps({ index });
+      const label = getLabel(item);
+      return (
+        <Chip
+          key={key ?? index}
+          {...tagProps}
+          size="small"
+          label={label}
+          title={label}
+          sx={{ maxWidth: 130, flexShrink: 1, minWidth: 0, ...chipSx }}
+        />
+      );
+    }),
+    hidden.length > 0 && (
+      <Tooltip
+        key="more"
+        arrow
+        placement="top"
+        title={
+          <Box sx={{ py: 0.25 }}>
+            {hidden.map((item, i) => (
+              <Box key={i} sx={{ fontSize: 12, lineHeight: 1.6 }}>
+                {getLabel(item)}
+              </Box>
+            ))}
+          </Box>
+        }
+      >
+        <Chip
+          size="small"
+          label={`+${hidden.length} more`}
+          sx={{ flexShrink: 0, cursor: "default", fontWeight: 600, ...chipSx }}
+        />
+      </Tooltip>
+    ),
+  ];
 };
 
 /* ══════════════════════ Extra details — config & helpers ══════════════════════ */
@@ -112,6 +172,8 @@ const FALLBACK_OPTIONS = {
 };
 
 /* Field list drives both the read-only view and the edit dialog.
+   hidden: not shown (same as the stepper) — still loaded and saved, so the
+   value already stored for it is kept.
    type: multi | single | date | text   ·   usOnly: show/send only for US */
 const EXTRA_GROUPS = [
   {
@@ -154,6 +216,7 @@ const EXTRA_GROUPS = [
       { key: "preferredCompanyTypes", api: "preferred_company_types", label: "Company Types", type: "multi", options: "companyTypes" },
       { key: "mostImportantOpportunityFactors", api: "most_important_opportunity_factors", label: "Opportunity Factors", type: "multi", options: "opportunityFactors" },
       { key: "locationPreference", api: "location_preference", label: "Location Preference", type: "single", options: "locationPreferences" },
+      { key: "preferredShift", api: "preferred_shift", label: "Preferred Shift", type: "single", options: "workShifts" },
     ],
   },
   {
@@ -163,11 +226,10 @@ const EXTRA_GROUPS = [
       { key: "currentJobSearchStatus", api: "current_job_search_status", label: "Job Search Status", type: "single", options: "jobSearchStatus" },
       { key: "currentEmploymentStatus", api: "current_employment_status", label: "Employment Status", type: "single", options: "employmentStatus" },
       { key: "currentTimeZone", api: "current_time_zone", label: "Current Time Zone", type: "single", options: "timezones" },
-      { key: "preferredUsTimeZone", api: "preferred_us_time_zone", label: "Preferred US Time Zone", type: "single", options: "preferredUsTimeZones", usOnly: true },
-      { key: "preferredShift", api: "preferred_shift", label: "Preferred Shift", type: "single", options: "workShifts" },
+      { key: "preferredUsTimeZone", api: "preferred_us_time_zone", label: "Preferred US Time Zone", type: "single", options: "preferredUsTimeZones", usOnly: true, hidden: true },
       { key: "preferredInterviewDays", api: "preferred_interview_days", label: "Interview Days", type: "multi", options: "interviewDays" },
-      { key: "preferredInterviewTime", api: "preferred_interview_time", label: "Interview Time", type: "single", options: "interviewPreferenceTypes" },
-      { key: "interviewTimeZone", api: "interview_time_zone", label: "Interview Time Zone", type: "single", options: "timezones" },
+      { key: "preferredInterviewTime", api: "preferred_interview_time", label: "Interview Time", type: "single", options: "interviewPreferenceTypes", hidden: true },
+      { key: "interviewTimeZone", api: "interview_time_zone", label: "Interview Time Zone", type: "single", options: "timezones", hidden: true },
     ],
   },
   {
@@ -435,6 +497,8 @@ function Personaldetails({ onSectionComplete }) {
     currentAddress: "",
     permanentAddress: "",
     nationality: "",
+    languagesKnown: [],
+    expectedSalary: "",
     country: "",
     stateAndCity: "",
     workAuthorization: "",
@@ -461,6 +525,10 @@ function Personaldetails({ onSectionComplete }) {
       currentAddress: candidateCompleateDetails?.present_address || "",
       permanentAddress: candidateCompleateDetails?.address || "",
       nationality: candidateCompleateDetails?.nationality || "",
+      languagesKnown: toArray(candidateCompleateDetails?.languages_known),
+      expectedSalary: Number(candidateCompleateDetails?.preferred_salary)
+        ? String(candidateCompleateDetails.preferred_salary)
+        : "",
       country: candidateCompleateDetails?.country || "",
       stateAndCity: candidateCompleateDetails?.state || "",
       workAuthorization: candidateCompleateDetails?.work_authorization || "",
@@ -640,7 +708,7 @@ function Personaldetails({ onSectionComplete }) {
       tempErrors.nationality = "Nationality is required";
     if (!personalData.country) tempErrors.country = "Country is required";
     if (!personalData.stateAndCity)
-      tempErrors.stateAndCity = "State & City is required";
+      tempErrors.stateAndCity = "City & State is required";
     if (!personalData.pinCode) tempErrors.pinCode = "Pincode is required";
     // Extra-details fields are all optional — intentionally not validated
     setErrors(tempErrors);
@@ -660,10 +728,11 @@ function Personaldetails({ onSectionComplete }) {
           nationality: personalData.nationality,
           // This dialog doesn't edit these three — keep what's already saved
           // instead of overwriting with placeholders
-          languages_known: candidateCompleateDetails?.languages_known ?? [],
+          languages_known: personalData.languagesKnown || [],
           address: personalData.permanentAddress,
           present_address: personalData.currentAddress,
-          preferred_salary: candidateCompleateDetails?.preferred_salary ?? 0,
+          // "Expected Salary" in the UI — same API key as before
+          preferred_salary: Number(personalData.expectedSalary) || 0,
           city: personalData.stateAndCity,
           state: personalData.stateAndCity,
           country: personalData.country,
@@ -701,7 +770,7 @@ function Personaldetails({ onSectionComplete }) {
 
   /* Groups / fields visible for the current country */
   const visibleGroups = EXTRA_GROUPS.filter((g) => !g.usOnly || isUS)
-    .map((g) => ({ ...g, fields: g.fields.filter((f) => !f.usOnly || isUS) }))
+    .map((g) => ({ ...g, fields: g.fields.filter((f) => !f.hidden && (!f.usOnly || isUS)) }))
     .filter((g) => g.fields.length);
 
   /* Read-only view: only groups that have at least one filled value */
@@ -756,7 +825,8 @@ function Personaldetails({ onSectionComplete }) {
         // Multi-select: list stays open after each pick, picked items drop out of it
         disableCloseOnSelect={isMulti}
         filterSelectedOptions={isMulti}
-        ChipProps={{ size: "small", sx: multiChipSx }}
+        renderTags={renderLimitedTags((k) => labelFor(dd[f.options], k), multiChipSx)}
+        sx={isMulti ? singleLineMultiSx : undefined}
         options={(dd[f.options] || []).map((o) => o.key)}
         getOptionLabel={(k) => labelFor(dd[f.options], k)}
         loading={ddLoading}
@@ -838,6 +908,20 @@ function Personaldetails({ onSectionComplete }) {
                 icon={<PublicOutlinedIcon sx={{ fontSize: 18 }} />}
                 label="Nationality"
                 value={personalData.nationality}
+              />
+              <DetailRow
+                icon={<TranslateOutlinedIcon sx={{ fontSize: 18 }} />}
+                label="Languages Known"
+                value={(personalData.languagesKnown || []).join(", ")}
+              />
+              <DetailRow
+                icon={<PaymentsOutlinedIcon sx={{ fontSize: 18 }} />}
+                label="Expected Salary"
+                value={
+                  Number(personalData.expectedSalary)
+                    ? Number(personalData.expectedSalary).toLocaleString("en-IN")
+                    : ""
+                }
               />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
@@ -994,6 +1078,44 @@ function Personaldetails({ onSectionComplete }) {
                 sx={dialogFieldSx}
               />
             </Grid>
+
+            {/* Languages & expected salary — part of Basic Info (same as the stepper) */}
+            <Grid item size={{ xs: 12, sm: 6 }}>
+              <Autocomplete
+                multiple
+                freeSolo
+                disableCloseOnSelect
+                filterSelectedOptions
+                options={languageOptions}
+                value={personalData.languagesKnown || []}
+                onChange={(_e, v) =>
+                  setPersonalData((prev) => ({ ...prev, languagesKnown: v || [] }))
+                }
+                size="small"
+                sx={singleLineMultiSx}
+                renderTags={renderLimitedTags((l) => l, multiChipSx)}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Languages Known"
+                    placeholder={personalData.languagesKnown?.length ? "" : "Select or type languages"}
+                    sx={dialogFieldSx}
+                  />
+                )}
+              />
+            </Grid>
+            <Grid item size={{ xs: 12, sm: 6 }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Expected Salary"
+                name="expectedSalary"
+                type="number"
+                value={personalData.expectedSalary || ""}
+                onChange={handleChange}
+                sx={dialogFieldSx}
+              />
+            </Grid>
           </Grid>
 
           {/* ── Address — current + its location, then permanent + its location ── */}
@@ -1045,7 +1167,7 @@ function Personaldetails({ onSectionComplete }) {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="State & City"
+                      label="City & State"
                       error={!!errors.stateAndCity}
                       helperText={errors.stateAndCity}
                       sx={dialogFieldSx}
@@ -1121,7 +1243,7 @@ function Personaldetails({ onSectionComplete }) {
                   onChange={handleDropdownChange("permanentStateAndCity")}
                   size="small"
                   renderInput={(params) => (
-                    <TextField {...params} label="State & City" sx={dialogFieldSx} />
+                    <TextField {...params} label="City & State" sx={dialogFieldSx} />
                   )}
                 />
               </Grid>

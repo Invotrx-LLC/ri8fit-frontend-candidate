@@ -711,12 +711,24 @@ export default function Sidebar() {
 
             {/* User name + avatar */}
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" } }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, fontFamily: "'Nunito Sans', sans-serif" }}>
+              <Box sx={{ textAlign: "right", minWidth: 0 }}>
+                <Typography
+                  title={userName}
+                  sx={{
+                    fontSize: { xs: 12, sm: 13 },
+                    fontWeight: 600,
+                    fontFamily: "'Nunito Sans', sans-serif",
+                    textTransform: "capitalize",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    maxWidth: { xs: 90, sm: 200 },
+                  }}
+                >
                   {userName}
                 </Typography>
                 {formattedRole && (
-                  <Typography sx={{ fontSize: 11, color: "#94A3B8", lineHeight: 1 }}>
+                  <Typography sx={{ fontSize: 11, color: "#94A3B8", lineHeight: 1, display: { xs: "none", sm: "block" } }}>
                     {formattedRole}
                   </Typography>
                 )}
@@ -753,6 +765,23 @@ export default function Sidebar() {
               },
             }}
           >
+            {/* Who is logged in */}
+            <Box sx={{ px: 2, py: 1.25, display: "flex", alignItems: "center", gap: 1.25 }}>
+              <Avatar sx={{ bgcolor: "#EEF3FF", color: BRAND.primary, width: 32, height: 32, fontSize: 13, fontWeight: 700 }}>
+                {userName.charAt(0).toUpperCase()}
+              </Avatar>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography noWrap sx={{ fontSize: 13.5, fontWeight: 700, color: BRAND.dark, textTransform: "capitalize" }}>
+                  {userName}
+                </Typography>
+                {formattedRole && (
+                  <Typography noWrap sx={{ fontSize: 11.5, color: "#94A3B8" }}>
+                    {formattedRole}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+            <Divider sx={{ my: 0.5 }} />
             <MenuItem
               onClick={() => { navigate("/recruit/settings/profile-details"); setAnchorEl(null); }}
               sx={{ fontSize: 13, gap: 1, borderRadius: "8px", mx: 0.5, my: 0.25 }}

@@ -35,6 +35,7 @@ import StepPageLayout from "../../../../../../components/StepPageLayout/index.js
 import { candidateUpdateFormData } from "../../../../../../store/slices/candidateSlice";
 import { candidateGetUserDetails } from "../../../../../../utils/candidateReigister.js";
 import { candidateSetInitialData } from "../../../../../../store/slices/candidateSlice";
+import { useGetFunctionalRolesQuery } from "../../../../../../store/api/settings/CandidatePortalApis";
 /* ── Design tokens — shared visual system across Employment / Education / Personal ── */
 const INK = "#1F2937";
 const TEXT_MUTED = "#6B7280";
@@ -170,7 +171,82 @@ const noticePeriodOptions = [
 
 const employmentTypeOptions = ["Full time", "Part time", "Freelance"];
 const employmentTypes = ["PART TIME", "FULL TIME", "INTERNSHIP"];
-const currencyOptions = ["₹", "$", "€", "£", "¥", "AED", "AUD"];
+
+/* ── Employment types — loaded from GET /employment-types ──────────────────
+   Each option is { key, label }: key is what gets saved, label is shown.
+   The static list above is used only if the API fails or returns nothing. */
+const EMPLOYMENT_TYPES_URL = "/employment-types";
+const toTypeOption = (item) => {
+  if (typeof item === "string") return { key: item, label: item };
+  const key = item?.key ?? item?.value ?? item?.code ?? item?.name ?? item?.label ?? "";
+  const label = item?.label ?? item?.name ?? item?.display_name ?? item?.value ?? key;
+  return { key: String(key), label: String(label) };
+};
+const extractTypeOptions = (res) => {
+  const list =
+    [res, res?.data, res?.data?.data, res?.data?.items, res?.items].find(Array.isArray) || [];
+  const seen = new Set();
+  return list.map(toTypeOption).filter((o) => o.key && !seen.has(o.key) && seen.add(o.key));
+};
+const FALLBACK_EMPLOYMENT_TYPES = employmentTypeOptions.map(toTypeOption);
+
+/* "FULL_TIME", "full-time", "Full time" all compare equal */
+const looseKey = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/* Saved / resume value → the matching option key (unchanged if no match) */
+const matchEmploymentType = (options, value) => {
+  if (!value) return "";
+  const target = looseKey(value);
+  const hit = options.find((o) => looseKey(o.key) === target || looseKey(o.label) === target);
+  return hit ? hit.key : value;
+};
+/* ── Currencies — stored as ISO code, shown as "₹ (INR)" ─────────────────── */
+const DEFAULT_CURRENCY = "INR";
+const KNOWN_CURRENCIES = {
+  INR: "₹",
+  USD: "$",
+  EUR: "€",
+  GBP: "£",
+  JPY: "¥",
+  AED: "د.إ",
+  AUD: "A$",
+};
+const currencyOptions = Object.keys(KNOWN_CURRENCIES);
+
+/* Symbol for any ISO code — known list first, then the browser's own data
+   (so a code like "SGD" from the API still shows "S$") */
+const currencySymbol = (code) => {
+  if (!code) return "";
+  if (KNOWN_CURRENCIES[code]) return KNOWN_CURRENCIES[code];
+  try {
+    return (
+      new Intl.NumberFormat("en", { style: "currency", currency: code, currencyDisplay: "narrowSymbol" })
+        .formatToParts(0)
+        .find((p) => p.type === "currency")?.value || code
+    );
+  } catch {
+    return code;
+  }
+};
+
+/* "INR" → "₹ (INR)"  ·  codes without their own symbol just show the code */
+const currencyLabel = (code) => {
+  const symbol = currencySymbol(code);
+  return symbol && symbol !== code ? `${symbol} (${code})` : code || "";
+};
+
+/* Accepts whatever the API / old state holds — "INR", "inr", "₹", "₹ (INR)",
+   "Rs", "AED" — and returns the ISO code */
+const normalizeCurrency = (value) => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const inBrackets = raw.match(/\(([A-Za-z]{3})\)/);
+  if (inBrackets) return inBrackets[1].toUpperCase();
+  if (/^[A-Za-z]{3}$/.test(raw)) return raw.toUpperCase();
+  if (/^(rs\.?|rupees?)$/i.test(raw)) return "INR";
+  const bySymbol = Object.entries(KNOWN_CURRENCIES).find(([, sym]) => sym === raw);
+  return bySymbol ? bySymbol[0] : raw;
+};
 const salaryBreakdownOptions = [
   "Fixed",
   "Fixed + Variable",
@@ -185,7 +261,10 @@ const toDigits = (v) => String(v ?? "").replace(/[^\d]/g, "");
 const formatAmount = (value, currency) => {
   const digits = toDigits(value);
   if (!digits) return "";
-  return Number(digits).toLocaleString(currency === "₹" || !currency ? "en-IN" : "en-US");
+  // Indian-style commas (3,25,000) for INR, international (325,000) for others
+  return Number(digits).toLocaleString(
+    !currency || normalizeCurrency(currency) === "INR" ? "en-IN" : "en-US"
+  );
 };
 
 /* Label shown above a field (Naukri-style compensation block) */
@@ -199,7 +278,7 @@ const FieldLabel = ({ children }) => (
 const CurrencyBox = ({ currency }) => (
   <Box
     sx={{
-      width: 96,
+      width: 120,
       height: 40,
       flexShrink: 0,
       border: `1px solid ${BORDER}`,
@@ -212,7 +291,7 @@ const CurrencyBox = ({ currency }) => (
       fontSize: 14,
     }}
   >
-    {currency || "₹"}
+    {currencyLabel(normalizeCurrency(currency) || DEFAULT_CURRENCY)}
   </Box>
 );
 const parseNoticePeriod = (value) => {
@@ -279,6 +358,32 @@ const parseFlexibleDate = (value) => {
   return isNaN(fallback.getTime()) ? null : fallback;
 };
 
+/* ── Resume employment → one record for this step ─────────────────────────
+   New response: resume_data.employment is an ARRAY of jobs, and the total
+   experience lives in resume_data.personal_details. Old response used a single
+   resume_data.Relevant_professional_experience object — still supported. */
+const getResumeEmployment = (resumeData) => {
+  if (!resumeData) return null;
+  const list = Array.isArray(resumeData.employment) ? resumeData.employment : null;
+  const job = list?.length
+    ? list.find((e) => e?.is_current) || list[0] // current job, else the latest one
+    : resumeData.Relevant_professional_experience;
+  if (!job) return null;
+
+  const pd = resumeData.personal_details || {};
+  const hasOwnTotal = Number(job.total_exp_years) > 0 || Number(job.total_exp_months) > 0;
+  return {
+    ...job,
+    // Experience fields show the candidate's relevant total, not this job's duration
+    ...(hasOwnTotal
+      ? {}
+      : {
+          total_exp_years: pd.total_exp_years ?? pd.overall_exp_years ?? 0,
+          total_exp_months: pd.total_exp_months ?? pd.overall_exp_months ?? 0,
+        }),
+  };
+};
+
 const mapSourceToLocal = (source) => {
   if (!source) return {};
   const isCurrent =
@@ -291,8 +396,9 @@ const mapSourceToLocal = (source) => {
   return {
     isEmployed: isCurrent ? "yes" : "no",
     is_current: isCurrent,
-    employmentType: normalizeEmploymentType(source.employment_type),
-    previousEmployementType: normalizeEmploymentType(source.employment_type),
+    // Raw value — converted to the API option key once /employment-types loads
+    employmentType: source.employment_type || "",
+    previousEmployementType: source.employment_type || "",
     experienceYears: hasExplicitTotal
       ? (source.total_exp_years ?? 0)
       : parsedDuration.years,
@@ -305,12 +411,12 @@ const mapSourceToLocal = (source) => {
     previousJobTitle: source.job_title || "",
     startDate: parseFlexibleDate(source.joining_date),
     endDate: parseFlexibleDate(source.end_date),
-    currentSalary: source.current_salary ?? "",
+    currentSalary: Number(source.current_salary) ? String(source.current_salary) : "",
     expectedSalary: source.expected_salary ?? "",
-    fixedSalary: source.fixed_salary ?? "",
-    variableSalary: source.variable_salary ?? "",
+    fixedSalary: Number(source.fixed_salary) ? String(source.fixed_salary) : "",
+    variableSalary: Number(source.variable_salary) ? String(source.variable_salary) : "",
     typeOfStocks: source.type_of_stocks || "",
-    valueOfStocks: source.value_of_stocks ?? "",
+    valueOfStocks: Number(source.value_of_stocks) ? String(source.value_of_stocks) : "",
     salaryBreakdown: source.salary_breakdown || "",
     itSkills: Array.isArray(source.skills_used) ? source.skills_used : [],
     jobProfile: source.job_profile || "",
@@ -318,9 +424,18 @@ const mapSourceToLocal = (source) => {
     country: source.country || "",
     // Strip a trailing ", <country>" so the City field doesn't duplicate
     // what's already shown in Country (e.g. "Ramakrishnapur, India" -> "Ramakrishnapur")
-    location: stripCountryFromLocation(source.location, source.country),
+    // City is left empty when the resume only gave the country (location: "India")
+    location:
+      String(source.location || "").trim().toLowerCase() ===
+      String(source.country || "").trim().toLowerCase()
+        ? ""
+        : stripCountryFromLocation(source.location, source.country),
     key_responsibilities: source.key_responsibilities || "",
     noticePeriodDays: formatNoticePeriod(source.notice_period_days),
+    // Only overrides the default when the API actually sends a currency
+    ...(normalizeCurrency(source.currency || source.salary_currency)
+      ? { currency: normalizeCurrency(source.currency || source.salary_currency) }
+      : {}),
     is_relevant: source.is_relevant === false ? "no" : "yes",
     relocate:
       typeof source.willing_to_relocate === "boolean"
@@ -380,7 +495,7 @@ const YesNoToggle = ({ label, name, value, onChange, error }) => (
     </Typography>
     <RadioGroup
       row
-      name={name || label}
+      name={name || (typeof label === "string" ? label : undefined)}
       value={value || ""}
       onChange={(e) => onChange(e.target.value)}
       sx={{ display: "flex", gap: 3 }}
@@ -472,7 +587,7 @@ const EmploymentDetailsPage = ({
     noticePeriodDays: "",
     is_relevant: "yes",
     relocate: null,
-    currency: "₹",
+    currency: DEFAULT_CURRENCY,
     previousEmployementType: "",
     previousCompany: "",
     previousJobTitle: "",
@@ -481,6 +596,110 @@ const EmploymentDetailsPage = ({
     previousJobProfile: "",
   });
   console.log("localData,,", localData)
+
+  /* ── Target domain / function chosen on the register page ───────────────
+     Used in the "Is this role relevant…" question. Read from Redux first;
+     if it isn't there (e.g. after a refresh) it's fetched once. */
+  const [registerDetails, setRegisterDetails] = useState(null);
+  const { data: functionalRolesData } = useGetFunctionalRolesQuery();
+
+  useEffect(() => {
+    if (candidateDetails?.domain || candidateDetails?.position_role) return;
+    let active = true;
+    (async () => {
+      try {
+        const token = getItem(CANDIDATE_ACCESS_TOKEN);
+        const details = await candidateGetUserDetails(token, () => {});
+        if (active && details) setRegisterDetails(details);
+      } catch (err) {
+        console.error("Couldn't load register details", err);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const targetDomain = candidateDetails?.domain || registerDetails?.domain || "";
+  const functionList = Array.isArray(functionalRolesData)
+    ? functionalRolesData
+    : functionalRolesData?.data || [];
+  // The register page saves the function key in position_role / area_of_interest
+  // (they're swapped on submit), so check both against the function list
+  const targetFunction = (() => {
+    // Function applies to Clinical only. Some responses (e.g. the resume-status one)
+    // don't include "domain" at all — then a matching function key is still shown.
+    if (targetDomain && String(targetDomain).trim().toLowerCase() !== "clinical") return "";
+    const src =
+      candidateDetails?.position_role || candidateDetails?.area_of_interest
+        ? candidateDetails
+        : registerDetails || {};
+    const candidates = [src.position_role, src.area_of_interest, src.function].filter(Boolean);
+    for (const key of candidates) {
+      const hit = functionList.find((f) => f.function_key === key);
+      if (hit) return hit.function_label || hit.function_key;
+    }
+    return "";
+  })();
+  const relevanceTarget = [targetDomain, targetFunction].filter(Boolean).join(" / ");
+  const relevanceLabel = relevanceTarget ? (
+    <>
+      Is this role relevant to your target{" "}
+      <Box component="span" sx={{ color: PRIMARY_DARK, fontWeight: 700 }}>
+        {relevanceTarget}
+      </Box>{" "}
+      job?
+    </>
+  ) : (
+    "Is this role relevant to your target job?"
+  );
+
+  // Employment type dropdown — loaded once from the API
+  const [employmentTypeList, setEmploymentTypeList] = useState(FALLBACK_EMPLOYMENT_TYPES);
+  const [employmentTypesLoading, setEmploymentTypesLoading] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setEmploymentTypesLoading(true);
+      try {
+        const token = getItem(CANDIDATE_ACCESS_TOKEN) || getItem(ACCESS_TOKEN);
+        const res = await candidateApi.get(EMPLOYMENT_TYPES_URL, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        const list = extractTypeOptions(res);
+        if (active && list.length) setEmploymentTypeList(list);
+      } catch (err) {
+        console.error("Employment types API failed, using fallback list", err);
+      } finally {
+        if (active) setEmploymentTypesLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Once options are loaded, convert saved / resume values to the API's keys
+  useEffect(() => {
+    setLocalData((prev) => {
+      const employmentType = matchEmploymentType(employmentTypeList, prev.employmentType);
+      const previousEmployementType = matchEmploymentType(
+        employmentTypeList,
+        prev.previousEmployementType
+      );
+      return employmentType === prev.employmentType &&
+        previousEmployementType === prev.previousEmployementType
+        ? prev
+        : { ...prev, employmentType, previousEmployementType };
+    });
+  }, [employmentTypeList, localData.employmentType, localData.previousEmployementType]);
+
+  const employmentTypeKeys = employmentTypeList.map((o) => o.key);
+  const employmentTypeLabel = (k) =>
+    employmentTypeList.find((o) => o.key === k)?.label ?? k ?? "";
 
   //   useEffect(() => {
   //   if (candidateDetails?.resume_data) {
@@ -511,8 +730,8 @@ const EmploymentDetailsPage = ({
     console.log("savedEmploymentDetails", savedEmploymentDetails)
     const source =
       (hasSavedEmploymentDetails && savedEmploymentDetails) ||
-      fetchedResumeData?.resume_data?.Relevant_professional_experience ||
-      candidateDetails?.resume_data?.Relevant_professional_experience;
+      getResumeEmployment(fetchedResumeData?.resume_data) ||
+      getResumeEmployment(candidateDetails?.resume_data);
     console.log("source", source)
     if (!source) return;
     setLocalData((prev) => ({
@@ -713,8 +932,8 @@ const EmploymentDetailsPage = ({
         };
         const experienceId =
           localData.empID ||
-          fetchedResumeData?.resume_data?.Relevant_professional_experience?.id ||
-          candidateDetails?.resume_data?.Relevant_professional_experience?.id;
+          getResumeEmployment(fetchedResumeData?.resume_data)?.id ||
+          getResumeEmployment(candidateDetails?.resume_data)?.id;
         const res = await candidateApi.put(
           `/candidates/update-employment/${experienceId}`,
           payload,
@@ -740,12 +959,14 @@ const EmploymentDetailsPage = ({
             setLocalData((prev) => ({ ...prev, empID: newId }));
           }
 
-          // dispatch(
-          //   candidateUpdateFormData({
-          //     section: "employmentDetails",
-          //     updates: { ...payload, id: resolvedId },
-          //   }),
-          // );
+          // Keep what was saved in Redux so coming back to this step shows it
+          // (employment type, salary, breakdown …) instead of the resume data
+          dispatch(
+            candidateUpdateFormData({
+              section: "employmentDetails",
+              updates: { ...payload, id: resolvedId, currency: localData.currency },
+            }),
+          );
           handleNext();
         } else {
           toast.error(res.data.message || "An error occurred");
@@ -778,13 +999,21 @@ const EmploymentDetailsPage = ({
     <Box sx={{ display: "flex", gap: 1.5, alignItems: "flex-start" }}>
       {selectableCurrency ? (
         <Autocomplete
-          options={currencyOptions}
-          value={localData.currency || "₹"}
-          onChange={(_e, v) => setLocalData((prev) => ({ ...prev, currency: v || "₹" }))}
+          // A currency from the API that isn't in the list is added to it
+          options={
+            currencyOptions.includes(normalizeCurrency(localData.currency))
+              ? currencyOptions
+              : [...currencyOptions, normalizeCurrency(localData.currency)].filter(Boolean)
+          }
+          value={normalizeCurrency(localData.currency) || DEFAULT_CURRENCY}
+          onChange={(_e, v) =>
+            setLocalData((prev) => ({ ...prev, currency: v || DEFAULT_CURRENCY }))
+          }
+          getOptionLabel={currencyLabel}
           disableClearable
           size="small"
           slotProps={popupSlotProps}
-          sx={{ width: 96, flexShrink: 0 }}
+          sx={{ width: 120, flexShrink: 0 }}
           renderInput={(params) => <TextField {...params} sx={fieldSx} />}
         />
       ) : (
@@ -947,14 +1176,12 @@ const EmploymentDetailsPage = ({
           value={localData.isEmployed}
           onChange={handleToggleChange("isEmployed")}
         />
-        <Tooltip title="test">
-          <YesNoToggle
-            label="Is this role relevant to your target job?"
-            name="is_relevant"
-            value={localData.is_relevant}
-            onChange={handleToggleChange("is_relevant")}
-          />
-        </Tooltip>
+        <YesNoToggle
+          label={relevanceLabel}
+          name="is_relevant"
+          value={localData.is_relevant}
+          onChange={handleToggleChange("is_relevant")}
+        />
       </Box>
 
       {localData.is_current ? (
@@ -965,8 +1192,10 @@ const EmploymentDetailsPage = ({
             <Grid container spacing={2}>
               <Grid item size={{ xs: 12, sm: 4 }}>
                 <Autocomplete
-                  options={employmentTypeOptions}
-                  value={localData.employmentType || ""}
+                  options={employmentTypeKeys}
+                  getOptionLabel={employmentTypeLabel}
+                  loading={employmentTypesLoading}
+                  value={localData.employmentType || null}
                   onChange={handleAutoCompleteChange("employmentType")}
                   size="small"
                   slotProps={popupSlotProps}
@@ -1194,8 +1423,10 @@ const EmploymentDetailsPage = ({
             <Grid container spacing={2}>
               <Grid item size={{ xs: 12, sm: 4 }}>
                 <Autocomplete
-                  options={employmentTypes}
-                  value={localData.previousEmployementType || ""}
+                  options={employmentTypeKeys}
+                  getOptionLabel={employmentTypeLabel}
+                  loading={employmentTypesLoading}
+                  value={localData.previousEmployementType || null}
                   onChange={handleAutoCompleteChange("previousEmployementType")}
                   size="small"
                   slotProps={popupSlotProps}

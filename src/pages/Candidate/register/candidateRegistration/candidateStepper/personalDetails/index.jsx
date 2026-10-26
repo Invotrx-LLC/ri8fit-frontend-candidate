@@ -6,12 +6,13 @@ import {
   Button,
   Autocomplete,
   Checkbox,
+  Chip,
+  Tooltip,
   Grid,
   FormControlLabel,
   CircularProgress,
 } from "@mui/material";
 import PersonRoundedIcon from "@mui/icons-material/PersonRounded";
-import ChatBubbleOutlineRoundedIcon from "@mui/icons-material/ChatBubbleOutlineRounded";
 import HomeRoundedIcon from "@mui/icons-material/HomeRounded";
 import PlaceRoundedIcon from "@mui/icons-material/PlaceRounded";
 import TuneRoundedIcon from "@mui/icons-material/TuneRounded";
@@ -188,32 +189,92 @@ const SelectField = ({ label, options, value, onChange, loading = false }) => (
   />
 );
 
+/* ── Multi-select chips: one line, max 4 chips, rest as "+N more" ────────────
+   Hovering "+N more" lists the hidden items. The field keeps its normal
+   single-line height whether it is focused or not. */
+const MAX_VISIBLE_CHIPS = 4;
+const singleLineMultiSx = {
+  "& .MuiAutocomplete-inputRoot": {
+    flexWrap: "nowrap !important",
+    overflow: "hidden",
+  },
+  "& .MuiAutocomplete-input": { minWidth: "40px !important" },
+};
+const renderLimitedTags = (getLabel, chipSx) => (value, getTagProps) => {
+  const shown = value.slice(0, MAX_VISIBLE_CHIPS);
+  const hidden = value.slice(MAX_VISIBLE_CHIPS);
+  return [
+    ...shown.map((item, index) => {
+      const { key, ...tagProps } = getTagProps({ index });
+      const label = getLabel(item);
+      return (
+        <Chip
+          key={key ?? index}
+          {...tagProps}
+          size="small"
+          label={label}
+          title={label}
+          sx={{ maxWidth: 130, flexShrink: 1, minWidth: 0, ...chipSx }}
+        />
+      );
+    }),
+    hidden.length > 0 && (
+      <Tooltip
+        key="more"
+        arrow
+        placement="top"
+        title={
+          <Box sx={{ py: 0.25 }}>
+            {hidden.map((item, i) => (
+              <Box key={i} sx={{ fontSize: 12, lineHeight: 1.6 }}>
+                {getLabel(item)}
+              </Box>
+            ))}
+          </Box>
+        }
+      >
+        <Chip
+          size="small"
+          label={`+${hidden.length} more`}
+          sx={{ flexShrink: 0, cursor: "default", fontWeight: 600, ...chipSx }}
+        />
+      </Tooltip>
+    ),
+  ];
+};
+
+const stepperChipSx = {
+  bgcolor: PRIMARY_TINT,
+  color: PRIMARY_DARK,
+  fontWeight: 600,
+  "& .MuiChip-deleteIcon": { color: PRIMARY, "&:hover": { color: PRIMARY_DARK } },
+};
+
 /* ── Multi-value dropdown (chips) ────────────────────────────────────────── */
 const MultiSelectField = ({ label, options, value, onChange, loading = false }) => (
   <Autocomplete
     multiple
+    disableCloseOnSelect
     filterSelectedOptions
     {...optionProps(options)}
+    renderTags={renderLimitedTags(
+      (k) => options.find((o) => o.key === k)?.label ?? k,
+      stepperChipSx
+    )}
     loading={loading}
     value={value || []}
     onChange={(_e, v) => onChange(v || [])}
     size="small"
+    sx={singleLineMultiSx}
     renderInput={(params) => <TextField {...params} label={label} sx={fieldSx} />}
   />
 );
 
 const genders = ["Male", "Female", "Other"];
-const maritalOptions = ["Married", "UnMarried"];
-const languageOptions = [
-  "English",
-  "Hindi",
-  "Telugu",
-  "Tamil",
-  "Kannada",
-  "Malayalam",
-  "Marathi",
-  "Bengali",
-];
+const maritalOptions = ["Married", "Single", "Divorced", "Other"];
+/* Languages — most common for our candidates first, then A–Z.
+   Not in the list? The field also accepts a typed language (press Enter). */
+const languageOptions = ["English", "Hindi", "Telugu", "Tamil", "Kannada", "Malayalam", "Marathi", "Bengali", "Gujarati", "Punjabi", "Odia", "Urdu", "Afrikaans", "Albanian", "American Sign Language", "Amharic", "Arabic", "Armenian", "Assamese", "Awadhi", "Azerbaijani", "Basque", "Belarusian", "Bhojpuri", "Bodo", "Bosnian", "British Sign Language", "Bulgarian", "Burmese", "Cantonese", "Catalan", "Cebuano", "Chhattisgarhi", "Croatian", "Czech", "Danish", "Dari", "Dhivehi", "Dogri", "Dutch", "Dzongkha", "Esperanto", "Estonian", "Ewe", "Fijian", "Filipino (Tagalog)", "Finnish", "Flemish", "French", "Fula", "Galician", "Garhwali", "Garo", "Georgian", "German", "Greek", "Haryanvi", "Hausa", "Hawaiian", "Hebrew", "Hungarian", "Icelandic", "Igbo", "Indian Sign Language", "Indonesian", "Irish", "Italian", "Japanese", "Javanese", "Kashmiri", "Kazakh", "Khasi", "Khmer", "Kinyarwanda", "Kirundi", "Kokborok", "Konkani", "Korean", "Kumaoni", "Kurdish", "Kyrgyz", "Lao", "Latin", "Latvian", "Lingala", "Lithuanian", "Luganda", "Luxembourgish", "Macedonian", "Magahi", "Maithili", "Malagasy", "Malay", "Maltese", "Mandarin Chinese", "Manipuri", "Maori", "Mizo", "Moldovan", "Mongolian", "Nepali", "Norwegian", "Oromo", "Pashto", "Persian", "Polish", "Portuguese", "Rajasthani", "Romanian", "Russian", "Samoan", "Sanskrit", "Santali", "Scottish Gaelic", "Serbian", "Sesotho", "Setswana", "Shona", "Sindhi", "Sinhala", "Slovak", "Slovenian", "Somali", "Spanish", "Sundanese", "Swahili", "Swedish", "Tajik", "Thai", "Tigrinya", "Tongan", "Tulu", "Turkish", "Turkmen", "Twi", "Ukrainian", "Uzbek", "Vietnamese", "Welsh", "Wolof", "Xhosa", "Yiddish", "Yoruba", "Zulu"];
 
 /* ── Dropdown APIs — every extra-details dropdown loads its options from here ── */
 const DROPDOWN_ENDPOINTS = {
@@ -751,7 +812,7 @@ useEffect(() => {
       tempErrors.permanentAddress = "Permanent Address is required";
     if (!localData.country) tempErrors.country = "Country is required";
     if (!localData.stateAndCity)
-      tempErrors.stateAndCity = "State & City is required";
+      tempErrors.stateAndCity = "City & State is required";
     if (!localData.pinCode) tempErrors.pinCode = "Pincode is required";
     // Extra-details fields are all optional — intentionally not validated
     setErrors(tempErrors);
@@ -899,23 +960,25 @@ useEffect(() => {
               error={errors.marriage}
             />
           </Grid>
-        </Grid>
-      </SectionPanel>
 
-      {/* Languages & Salary */}
-      <SectionPanel icon={ChatBubbleOutlineRoundedIcon} title="Languages & Salary">
-        <Grid container spacing={2}>
+          {/* Languages & expected salary — part of Basic Info */}
           <Grid item size={{ xs: 12, sm: 6 }}>
             <Autocomplete
               multiple
+              freeSolo
+              disableCloseOnSelect
+              filterSelectedOptions
               options={languageOptions}
               value={localData.languagesKnown}
               onChange={handleLanguagesChange}
               size="small"
+              sx={singleLineMultiSx}
+              renderTags={renderLimitedTags((l) => l, stepperChipSx)}
               renderInput={(params) => (
                 <TextField
                   {...params}
                   label="Languages Known"
+                  placeholder={localData.languagesKnown.length ? "" : "Select or type languages"}
                   error={!!errors.languagesKnown}
                   helperText={errors.languagesKnown}
                   sx={fieldSx}
@@ -927,7 +990,7 @@ useEffect(() => {
             <TextField
               fullWidth
               size="small"
-              label="Preferred Salary"
+              label="Expected Salary"
               type="number"
               value={localData.preferredSalary || ""}
               onChange={handleChange("preferredSalary")}
@@ -991,7 +1054,7 @@ useEffect(() => {
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="State & City"
+                  label=" City & State"
                   error={!!errors.stateAndCity}
                   helperText={errors.stateAndCity}
                   sx={fieldSx}
@@ -1069,7 +1132,7 @@ useEffect(() => {
               }
               size="small"
               renderInput={(params) => (
-                <TextField {...params} label="State & City" sx={fieldSx} />
+                <TextField {...params} label="City & State" sx={fieldSx} />
               )}
             />
           </Grid>
@@ -1266,13 +1329,22 @@ useEffect(() => {
               onChange={handleValue("mostImportantOpportunityFactors")}
             />
           </Grid>
-          <Grid item size={{ xs: 12 }}>
+          <Grid item size={{ xs: 12, sm: 6 }}>
             <SelectField
               label="Location Preference"
               options={dd.locationPreferences}
               loading={ddLoading}
               value={localData.locationPreference}
               onChange={handleValue("locationPreference")}
+            />
+          </Grid>
+          <Grid item size={{ xs: 12, sm: 6 }}>
+            <SelectField
+              label="Preferred Shift"
+              options={dd.workShifts}
+              loading={ddLoading}
+              value={localData.preferredShift}
+              onChange={handleValue("preferredShift")}
             />
           </Grid>
         </Grid>
@@ -1309,7 +1381,7 @@ useEffect(() => {
             />
           </Grid>
           {/* US-only — Indian / other candidates don't need a US time zone */}
-          {isUnitedStates && (
+          {/* {isUnitedStates && (
             <Grid item size={{ xs: 12, sm: 6 }}>
               <SelectField
                 label="Preferred US Time Zone"
@@ -1319,16 +1391,8 @@ useEffect(() => {
                 onChange={handleValue("preferredUsTimeZone")}
               />
             </Grid>
-          )}
-          <Grid item size={{ xs: 12, sm: 6 }}>
-            <SelectField
-              label="Preferred Shift"
-              options={dd.workShifts}
-              loading={ddLoading}
-              value={localData.preferredShift}
-              onChange={handleValue("preferredShift")}
-            />
-          </Grid>
+          )} */}
+          
           <Grid item size={{ xs: 12, sm: 6 }}>
             <MultiSelectField
               label="Preferred Interview Days"
@@ -1338,7 +1402,7 @@ useEffect(() => {
               onChange={handleValue("preferredInterviewDays")}
             />
           </Grid>
-          <Grid item size={{ xs: 12, sm: 6 }}>
+          {/* <Grid item size={{ xs: 12, sm: 6 }}>
             <SelectField
               label="Preferred Interview Time"
               options={dd.interviewPreferenceTypes}
@@ -1346,8 +1410,8 @@ useEffect(() => {
               value={localData.preferredInterviewTime}
               onChange={handleValue("preferredInterviewTime")}
             />
-          </Grid>
-          <Grid item size={{ xs: 12, sm: 6 }}>
+          </Grid> */}
+          {/* <Grid item size={{ xs: 12, sm: 6 }}>
             <SelectField
               label="Interview Time Zone"
               options={dd.timezones}
@@ -1355,7 +1419,7 @@ useEffect(() => {
               value={localData.interviewTimeZone}
               onChange={handleValue("interviewTimeZone")}
             />
-          </Grid>
+          </Grid> */}
         </Grid>
       </SectionPanel>
 

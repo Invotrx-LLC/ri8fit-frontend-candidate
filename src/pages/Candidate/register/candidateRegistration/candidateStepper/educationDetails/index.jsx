@@ -9,8 +9,6 @@ import {
   Grid,
 } from "@mui/material";
 import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
-import MenuBookRoundedIcon from "@mui/icons-material/MenuBookRounded";
-import BarChartRoundedIcon from "@mui/icons-material/BarChartRounded";
 import { useDispatch, useSelector } from "react-redux";
 import { ACCESS_TOKEN, CANDIDATE_ACCESS_TOKEN, getItem } from "../../../../../../utils/helper.js";
 import { toast } from "react-toastify";
@@ -109,17 +107,29 @@ const fetchOptions = async (url, params) => {
     return [];
   }
 };
-const universities = [
-  "National Institute of Technology",
-  "Indian Institute of Technology",
-  "Private University",
-  "SRM University",
-];
 const gradingSystems = [
   "CGPA (10-point scale)",
   "CGPA (4-point scale)",
   "Percentage",
 ];
+/* ── Resume education → one record for this step ──────────────────────────
+   New response: resume_data.education is an ARRAY (highest qualification first).
+   Old response sent a single object — both are handled. */
+const getResumeEducation = (resumeData) => {
+  const edu = resumeData?.education;
+  if (Array.isArray(edu)) return edu.find(Boolean) || null;
+  return edu && Object.keys(edu).length ? edu : null;
+};
+
+/* Matches a resume value to the dropdown's own spelling
+   ("B.Sc." ↔ "B.Sc", "postgraduate / master's degree" ↔ "Postgraduate / Master's Degree") */
+const looseKey = (v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+const matchOption = (options, value) => {
+  if (!value || !options?.length) return value;
+  const hit = options.find((o) => looseKey(o) === looseKey(value));
+  return hit ?? value;
+};
+
 const years = Array.from({ length: 50 }, (_, i) => `${2025 - i}`);
 
 /* ── Section header — icon badge + title, sits above a tinted panel ─────── */
@@ -221,6 +231,29 @@ const EducationalPage = ({
     };
   }, []);
 
+  // Resume values use their own spelling — align them to the dropdown options
+  // so the cascade (courses → specializations) is called with valid values
+  useEffect(() => {
+    setLocalData((prev) => {
+      const qualification = matchOption(educationLevels, prev.qualification);
+      return qualification === prev.qualification ? prev : { ...prev, qualification };
+    });
+  }, [educationLevels, localData.qualification]);
+
+  useEffect(() => {
+    setLocalData((prev) => {
+      const course = matchOption(courseOptions, prev.course);
+      return course === prev.course ? prev : { ...prev, course };
+    });
+  }, [courseOptions, localData.course]);
+
+  useEffect(() => {
+    setLocalData((prev) => {
+      const specialization = matchOption(specializationOptions, prev.specialization);
+      return specialization === prev.specialization ? prev : { ...prev, specialization };
+    });
+  }, [specializationOptions, localData.specialization]);
+
   // 2. Courses — reload whenever the qualification changes
   useEffect(() => {
     if (!localData.qualification) {
@@ -280,8 +313,8 @@ const EducationalPage = ({
       setLocalData((prev) => ({ ...prev, ...savedEducationDetails }));
       return;
     }
-    const edu = candidateDetails?.resume_data?.education || {};
-    if (!Object.keys(edu).length) return;
+    const edu = getResumeEducation(candidateDetails?.resume_data);
+    if (!edu) return;
     setLocalData({
       educationId: edu.id ?? null,
       qualification: edu.education_level || "",
@@ -328,13 +361,13 @@ const EducationalPage = ({
   };
 
   const handleChange = (key) => (event) => {
-    setLocalData((prev) => ({ ...prev, [key]: event.target.value || "" }));
+    setLocalData((prev) => ({ ...prev, [key]: event.target.value ?? "" }));
   };
 
   const handleSaveAndNext = () => {
     const payload = {
       education_level: localData.qualification,
-      university: localData.university,
+      university: (localData.university || "").trim(),
       course: localData.course,
       specialization: localData.specialization,
       course_type: localData.courseType,
@@ -353,7 +386,7 @@ const EducationalPage = ({
         // to update. Falls back to the live Redux value for the edge case
         // where hydration hasn't run yet.
         const existingEducationId =
-          localData.educationId || candidateDetails?.resume_data?.education?.id;
+          localData.educationId || getResumeEducation(candidateDetails?.resume_data)?.id;
 
         const res = existingEducationId
           ? await candidateApi.put(
@@ -436,8 +469,8 @@ const EducationalPage = ({
         </Typography>
       </Box>
 
-      {/* Qualification */}
-      <SectionPanel icon={SchoolRoundedIcon} title="Qualification">
+      {/* Qualification, course details and grading — all in one panel */}
+      <SectionPanel icon={SchoolRoundedIcon} title="Qualification & Course Details">
         <Grid container spacing={2}>
           <Grid item size={{ xs: 12, sm: 6 }}>
             <Autocomplete
@@ -453,24 +486,19 @@ const EducationalPage = ({
             />
           </Grid>
           <Grid item size={{ xs: 12, sm: 6 }}>
-            <Autocomplete
-              freeSolo
-              options={universities}
-              value={localData.university || null}
-              onChange={handleAutoCompleteChange("university")}
+            {/* Free text — whatever the candidate types is saved as-is */}
+            <TextField
+              fullWidth
               size="small"
-              slotProps={popupSlotProps}
-              renderInput={(params) => (
-                <TextField {...params} label="University / Institute" sx={fieldSx} />
-              )}
+              label="University / Institute"
+              placeholder="Enter your university or college name"
+              value={localData.university || ""}
+              onChange={handleChange("university")}
+              sx={fieldSx}
             />
           </Grid>
-        </Grid>
-      </SectionPanel>
 
-      {/* Course Details */}
-      <SectionPanel icon={MenuBookRoundedIcon} title="Course Details">
-        <Grid container spacing={2}>
+          {/* Course details — same panel */}
           <Grid item size={{ xs: 12, sm: 6 }}>
             <Autocomplete
               options={courseOptions}
@@ -550,12 +578,8 @@ const EducationalPage = ({
               )}
             />
           </Grid>
-        </Grid>
-      </SectionPanel>
 
-      {/* Grading */}
-      <SectionPanel icon={BarChartRoundedIcon} title="Grading">
-        <Grid container spacing={2}>
+          {/* Grading — same panel */}
           <Grid item size={{ xs: 12, sm: 6 }}>
             <Autocomplete
               freeSolo

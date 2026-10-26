@@ -492,7 +492,7 @@ useEffect(() => {
                 textAlign: "center",
               }}
             >
-              <Typography sx={{ fontWeight: 700, fontSize: "20px", mb: 0.5 }}>
+              <Typography sx={{ fontWeight: 700, fontSize: "20px", mb: 0.5,color:"#1F242F" }}>
                 Enter OTP
               </Typography>
               <Typography sx={{ fontSize: "13px", color: "#9C9C9C", mb: 2.5 }}>

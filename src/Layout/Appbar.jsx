@@ -23,6 +23,36 @@ import { useSelector } from "react-redux";
 import ri8fitLogo from "../assets/ri8fit-logo.svg";
 import PowerSettingsNewIcon from "@mui/icons-material/PowerSettingsNew";
 
+/* ── Candidate display name ───────────────────────────────────────────────
+   The name can sit in different places depending on how the user got here
+   (login response, register / resume data, old localStorage) — use the
+   first one that has a value, and fall back to the email's first part. */
+const safeParse = (raw) => {
+  try {
+    return raw && raw !== "undefined" ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+const nameOf = (o) =>
+  !o
+    ? ""
+    : (
+        o.full_name ||
+        o.name ||
+        [o.first_name, o.last_name].filter(Boolean).map((s) => String(s).trim()).join(" ") ||
+        o.username ||
+        ""
+      ).trim();
+const resolveCandidateName = (...sources) => {
+  for (const s of sources) {
+    const n = nameOf(s);
+    if (n) return n;
+  }
+  const email = sources.find((s) => s?.email)?.email;
+  return email ? email.split("@")[0] : "";
+};
+
 const candiDateSettings = [{ name: "Logout", path: "/about" }];
 const HMsettings = [
   { name: "Dashboard", path: "/dashboard" },
@@ -37,9 +67,22 @@ function ResponsiveAppBar(props) {
   const isLogin = getItem(IS_AUTHENTICATED);
   const isRegisterPage = location.pathname.includes("for-candidate");
   const settings = isRegisterPage ? candiDateSettings : HMsettings;
-  const candidateName = useSelector(
-    (state) =>
-      state?.candidate?.formData?.candidateCompleateDetails?.full_name || "",
+  // The old path (formData.candidateCompleateDetails.full_name) is never
+  // filled, so the name was always blank — check every place it can be
+  const candidateCompleateDetails = useSelector(
+    (state) => state?.candidate?.formData?.candidateCompleateDetails,
+  );
+  const candidateDetails = useSelector(
+    (state) => state?.candidate?.formData?.candidateDetails,
+  );
+  const loginUser = useSelector(
+    (state) => state?.candidate?.formData?.loginDetails?.user,
+  );
+  const candidateName = resolveCandidateName(
+    candidateCompleateDetails,
+    candidateDetails,
+    loginUser,
+    safeParse(getItem("candidate_user")),
   );
 
   // Hide navbar on these specific pages
@@ -195,14 +238,20 @@ function ResponsiveAppBar(props) {
                 }}
               >
                 <Typography
+                  title={candidateName}
                   sx={{
                     fontFamily: "Poppins",
                     fontWeight: 500,
-                    fontSize: "16px",
+                    fontSize: { xs: "13px", sm: "16px" },
                     color: "#4B5563",
+                    textTransform: "capitalize",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    maxWidth: { xs: 110, sm: 220 },
                   }}
                 >
-                  {candidateName || ""}
+                  {candidateName}
                 </Typography>
                 <Tooltip title="Open settings">
                   <IconButton
@@ -297,13 +346,16 @@ function ResponsiveAppBar(props) {
                     </Avatar>
 
                     <Typography
+                      noWrap
                       sx={{
                         fontWeight: 600,
                         fontSize: "15px",
                         color: "#374151",
+                        textTransform: "capitalize",
+                        minWidth: 0,
                       }}
                     >
-                      {candidateName}
+                      {candidateName || "User"}
                     </Typography>
                   </Box>
 
