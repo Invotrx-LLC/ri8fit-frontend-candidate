@@ -111,7 +111,7 @@ function CandidateLayout() {
 
   // Name for the top-right corner — same API the profile header uses
   // (GET /candidate/profile/specific-details → data.full_name).
-  // Re-fetched on page change so an edited name shows up without a reload.
+  // Fetch once on layout mount to avoid route-switch refetch churn.
   const [profileDetails, setProfileDetails] = useState(null);
   useEffect(() => {
     let active = true;
@@ -129,7 +129,7 @@ function CandidateLayout() {
     return () => {
       active = false;
     };
-  }, [location.pathname]);
+  }, []);
   const loginUser = useSelector((state) => state?.candidate?.formData?.loginDetails?.user);
   const candidateDetails = useSelector((state) => state?.candidate?.formData?.candidateDetails);
   const displayName =
@@ -212,8 +212,8 @@ const currentLabel = currentItem?.label || "Page";
         key={item.path}
         selected={active}
         disabled={item.disabled}
-        component={item.disabled ? "div" : "a"}
-        href={item.disabled ? undefined : item.path}
+        component={item.disabled ? "div" : RouterLink}
+        to={item.disabled ? undefined : item.path}
         onClick={(event) => {
           if (item.disabled) {
             event.preventDefault();

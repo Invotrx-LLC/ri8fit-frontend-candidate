@@ -1,8 +1,9 @@
 import React, {
+  memo,
   useState,
   useEffect,
   useRef,
-  useContext,
+  useCallback,
 } from "react";
 import { Box, Grid, Paper, CircularProgress } from "@mui/material";
 import { styled } from "@mui/system";
@@ -12,11 +13,9 @@ import SkillsSection from "../Skills/SkillSection";
 import EmploymentHistory from "../Employement/EmployeeHistory";
 import EducationSection from "../Education/EductaionSection";
 import CertificationSection from "../Certifications/CertificationSection";
-import { AppContext } from "../../../../AppContext";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { candidateUpdateFormData } from "../../../../store/slices/candidateSlice";
 import Sidebar from "../Sidebar/Sidebar"; // Adjust the path based on your file structure
-import { useLazyGetCandidateProfileQuery } from "../../../../store/api/settings/CandidatePortalApis";
 import Personaldetails from "../Personaldetails/Personaldetails";
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
@@ -43,13 +42,68 @@ const SECTION_CONFIG = [
   { id: "personal", label: "Personal Details", completed: false },
 ];
 
-const CandidateProfilePage = () => {
-  const { formData = {}, setFormData } = useContext(AppContext);
-  const dispatch = useDispatch();
-  const candidateCompleateDetails = useSelector(
-    (state) => state?.candidate?.formData?.candidateCompleateDetails || {}
+const ProfileSections = memo(function ProfileSections({
+  sectionRefs,
+  basicInfoResponse,
+  handleSectionComplete,
+}) {
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column" }}>
+      <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
+      <div ref={(el) => (sectionRefs.current.profileimage = el)}>
+        <ResumeSection
+          resumeInfo={basicInfoResponse}
+          onSectionComplete={handleSectionComplete}
+          showProfileImageOnly={true}
+        />
+      </div>
+      <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
+
+      <div ref={(el) => (sectionRefs.current.skills = el)}>
+        <SkillsSection
+          keySkillInfo={basicInfoResponse}
+          onSectionComplete={handleSectionComplete}
+        />
+      </div>
+      <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
+
+      <div ref={(el) => (sectionRefs.current.employment = el)}>
+        <EmploymentHistory
+          employmentHistroyInfo={basicInfoResponse}
+          onSectionComplete={handleSectionComplete}
+        />
+      </div>
+      <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
+
+      <div ref={(el) => (sectionRefs.current.education = el)}>
+        <EducationSection
+          educationSelectionInfo={basicInfoResponse}
+          onSectionComplete={handleSectionComplete}
+        />
+      </div>
+      <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
+
+      <div ref={(el) => (sectionRefs.current.certifications = el)}>
+        <CertificationSection
+          certificationSelectionInfo={basicInfoResponse}
+          onSectionComplete={handleSectionComplete}
+        />
+      </div>
+      <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
+
+      <div ref={(el) => (sectionRefs.current.personal = el)}>
+        <Personaldetails onSectionComplete={handleSectionComplete} />
+      </div>
+    </Box>
   );
-  const [getCandidateProfile] = useLazyGetCandidateProfileQuery();
+});
+
+const BasicInfoBlock = memo(function BasicInfoBlock({ basicInfoResponse }) {
+  return <BasicInformation candidateInfo={basicInfoResponse} />;
+});
+
+const CandidateProfilePage = () => {
+  const dispatch = useDispatch();
   const [activeSection, setActiveSection] = useState("");
   const [fetchLoading, setFetchLoading] = useState(false);
   const [basicInfoResponse, setBasicInfoResponse] = useState(null);
@@ -66,7 +120,7 @@ const CandidateProfilePage = () => {
     personal: null,
   });
 
-  const scrollToSection = (id) => {
+  const scrollToSection = useCallback((id) => {
     const ref = sectionRefs.current[id];
     if (ref) {
       window.scrollTo({
@@ -74,9 +128,9 @@ const CandidateProfilePage = () => {
         behavior: "smooth",
       });
     }
-  };
+  }, []);
 
-  const handleSectionComplete = (sectionId, isCompleted) => {
+  const handleSectionComplete = useCallback((sectionId, isCompleted) => {
     setSections((prevSections) =>
       prevSections.map((section) =>
         section.id === sectionId
@@ -92,7 +146,7 @@ const CandidateProfilePage = () => {
           : null,
       })
     );
-  };
+  }, [basicInfoResponse, dispatch]);
 
   // Add this state (if not already added)
   const [apiPercentage, setApiPercentage] = useState(0);
@@ -183,7 +237,9 @@ const CandidateProfilePage = () => {
     const observer = new IntersectionObserver(
       (entries) => {
         if (reachedBottom()) {
-          setActiveSection("personal");
+          setActiveSection((prev) =>
+            prev === "personal" ? prev : "personal"
+          );
           return;
         }
 
@@ -192,7 +248,10 @@ const CandidateProfilePage = () => {
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
 
         if (visible.length > 0) {
-          setActiveSection(visible[0].target.dataset.sectionId);
+          const nextSectionId = visible[0].target.dataset.sectionId;
+          setActiveSection((prev) =>
+            prev === nextSectionId ? prev : nextSectionId
+          );
         }
       },
       {
@@ -217,7 +276,7 @@ const CandidateProfilePage = () => {
 
     const handleBottomCheck = () => {
       if (reachedBottom()) {
-        setActiveSection("personal");
+        setActiveSection((prev) => (prev === "personal" ? prev : "personal"));
       }
     };
     window.addEventListener("scroll", handleBottomCheck, { passive: true });
@@ -246,10 +305,7 @@ const CandidateProfilePage = () => {
       <Grid container sx={{ maxWidth: "100%", mx: "auto", mt: 0 }}>
         <Grid item size={{ xs: 12, sm: 12, lg: 12, xl: 12 }}>
           <div ref={(el) => (sectionRefs.current.basic = el)}>
-            <BasicInformation
-              candidateInfo={basicInfoResponse}
-            // completeDetailsApi={fetchApi}
-            />
+            <BasicInfoBlock basicInfoResponse={basicInfoResponse} />
           </div>
         </Grid>
         {/* Sidebar and Sections Side by Side */}
@@ -267,60 +323,11 @@ const CandidateProfilePage = () => {
               </Grid>
               {/* Sections */}
               <Grid item size={{ xs: 12, sm: 8, lg: 9 }}>
-                <Box sx={{ display: "flex", flexDirection: "column" }}>
-                  {/* <div ref={(el) => (sectionRefs.current.resume = el)}>
-                    <ResumeSection
-                      resumeInfo={basicInfoResponse}
-                      onSectionComplete={handleSectionComplete}
-                    />
-                  </div> */}
-                  <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
-                  <div ref={(el) => (sectionRefs.current.profileimage = el)}>
-                    <ResumeSection
-                      resumeInfo={basicInfoResponse}
-                      onSectionComplete={handleSectionComplete}
-                      showProfileImageOnly={true} // optional flag if you want to split UI
-                    />
-                  </div>
-                  <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
-
-                  <div ref={(el) => (sectionRefs.current.skills = el)}>
-                    <SkillsSection
-                      keySkillInfo={basicInfoResponse}
-                      onSectionComplete={handleSectionComplete}
-                    // completeDetailsApi={fetchApi}
-                    />
-                  </div>
-                  <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
-                  <div ref={(el) => (sectionRefs.current.employment = el)}>
-                    <EmploymentHistory
-                      employmentHistroyInfo={basicInfoResponse}
-                      onSectionComplete={handleSectionComplete}
-                    // completeDetailsApi={fetchApi}
-                    />
-                  </div>
-                  <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
-                  <div ref={(el) => (sectionRefs.current.education = el)}>
-                    <EducationSection
-                      educationSelectionInfo={basicInfoResponse}
-                      onSectionComplete={handleSectionComplete}
-                    // completeDetailsApi={fetchApi}
-                    />
-                  </div>
-                  <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
-                  <div ref={(el) => (sectionRefs.current.certifications = el)}>
-                    <CertificationSection
-                      certificationSelectionInfo={basicInfoResponse}
-                      onSectionComplete={handleSectionComplete}
-                    />
-                  </div>
-                  <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
-                  <div ref={(el) => (sectionRefs.current.personal = el)}>
-                    <Personaldetails
-                      onSectionComplete={handleSectionComplete}
-                    />
-                  </div>
-                </Box>
+                <ProfileSections
+                  sectionRefs={sectionRefs}
+                  basicInfoResponse={basicInfoResponse}
+                  handleSectionComplete={handleSectionComplete}
+                />
               </Grid>
             </Grid>
           </StyledPaper>
