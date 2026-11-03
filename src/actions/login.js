@@ -71,19 +71,24 @@ const LoginURL = "/auth/login";
 
 
 export const googleLogin = async (setLoading) => {
-  setLoading(true)
-  return candidateApi.get("/auth/candidate/google/signup", { credentials: "include" }).then((response) => {
-    // console.log("response")
-    if (response.data.success) {
-      // console.log("sss", response.data.data)
-      //  window.open(response.data.data.google_oauth_url)
-      return response.data.data
+  setLoading?.(true);
+  try {
+    // NOTE: axios ignores fetch's `credentials` option; nothing else is needed here.
+    const response = await candidateApi.get("/auth/candidate/google/signup");
+    const body = response?.data || {};
+    // URL can come as data.google_oauth_url or at the top level
+    const url = body?.data?.google_oauth_url || body?.google_oauth_url || body?.data?.url;
+    if (body.success !== false && url) {
+      return { ...(body.data || {}), google_oauth_url: url };
     }
-    else
-      return null;
-  })
-    .catch((error) => toast.error(error.message))
-    .finally(() => {
-      setLoading(false)
-    })
-}
+    toast.error(body?.message || "Couldn't start Google sign-in. Please try again.");
+    return null;
+  } catch (error) {
+    toast.error(
+      error?.response?.data?.message || error?.message || "Couldn't start Google sign-in. Please try again."
+    );
+    return null;
+  } finally {
+    setLoading?.(false);
+  }
+};

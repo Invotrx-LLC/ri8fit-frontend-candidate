@@ -123,6 +123,8 @@ const CandidateLogin = () => {
         setItem(TOKEN_EXPIRY_KEY, data.data.expiry_time);
         setItem(IS_AUTHENTICATED, JSON.stringify(true));
         setItem("candidate_user", JSON.stringify(data?.data?.user));
+        // Read by the auto-redirect below (page reload / revisiting /login)
+        setItem("is_new_user", JSON.stringify(!!data.data.is_new_user));
         dispatch(
           candidateUpdateFormData({
             section: "loginDetails",
@@ -152,7 +154,9 @@ const CandidateLogin = () => {
 
   const handleGoogleLogin = async () => {
     const resp = await googleLogin(setLoading);
-    if (resp?.google_oauth_url) window.open(resp.google_oauth_url, "_self");
+    // Same tab: Google → backend → back to this app with the tokens
+    // (GoogleCallback in App.jsx finishes the sign-in)
+    if (resp?.google_oauth_url) window.location.assign(resp.google_oauth_url);
   };
 
   useEffect(() => {

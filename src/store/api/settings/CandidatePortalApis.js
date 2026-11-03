@@ -79,6 +79,7 @@ export const candidatePortalService = createApi({
     "CandidateSkills",
     "CandidateResume",
     "CandidateCertifications",
+    "ProfileCompletion",
   ],
 
   endpoints: (builder) => ({
@@ -340,6 +341,14 @@ export const candidatePortalService = createApi({
       }),
       invalidatesTags: ["CandidateResume"],
     }),
+    replaceCandidateResume: builder.mutation({
+      query: (formData) => ({
+        url: "/candidate/resume_upload/",
+        method: "POST",
+        body: formData,
+      }),
+      invalidatesTags: ["CandidateResume", "ProfileCompletion"],
+    }),
     uploadCandidateAdditionalDetails: builder.mutation({
       query: (formData) => ({
         url: "/candidate/upload-resume-additional-details-candidate/",
@@ -396,6 +405,22 @@ export const candidatePortalService = createApi({
       }),
       providesTags: ["CandidateCertifications"],
     }),
+    // Profile Completion — logged-in candidate's score, sections, missing details
+    // (candidate comes from the token, so no id in the URL)
+    getProfileCompletion: builder.query({
+      query: () => ({
+        url: "/candidate/profile-completion",
+        method: "GET",
+      }),
+      providesTags: ["ProfileCompletion"],
+    }),
+    // Profile Completion — the list of fields that count toward the score
+    getProfileCompletionFields: builder.query({
+      query: () => ({
+        url: "/candidate/profile-completion/fields",
+        method: "GET",
+      }),
+    }),
   }),
 });
 
@@ -431,6 +456,7 @@ export const {
   useLazyGetSubFunctionsQuery,
   useGetCandidateResumeQuery,
   useUploadCandidateResumeMutation,
+  useReplaceCandidateResumeMutation,
   useGetCandidateProfileImageQuery,
   useUploadCandidateProfileImageMutation,
   useUpdateCandidateProfileDetailsMutation,
@@ -442,4 +468,6 @@ export const {
   useGetCandidateResumeStatusQuery,
   useLazyGetWorkAuthorizationsQuery,            // add this
   useGetCandidateCertificationsQuery,
+  useGetProfileCompletionQuery,
+  useGetProfileCompletionFieldsQuery,
 } = candidatePortalService;

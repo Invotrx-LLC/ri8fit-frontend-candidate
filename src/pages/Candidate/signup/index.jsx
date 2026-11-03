@@ -375,7 +375,7 @@ useEffect(() => {
 
   const handleGoogleLogin = async () => {
     const resp = await googleLogin(setLoading);
-    if (resp?.google_oauth_url) window.open(resp.google_oauth_url, "_self");
+    if (resp?.google_oauth_url) window.location.assign(resp.google_oauth_url);
   };
 
   /* ── render ──────────────────────────────────────────────────────────── */

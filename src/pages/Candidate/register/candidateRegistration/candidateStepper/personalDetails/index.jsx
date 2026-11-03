@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
   Typography,
@@ -178,10 +178,11 @@ const ChipSelect = ({ label, options, value, onChange, error }) => (
 );
 
 /* ── Single-value dropdown ───────────────────────────────────────────────── */
-const SelectField = ({ label, options, value, onChange, loading = false }) => (
+const SelectField = ({ label, options, value, onChange, loading = false, onOpen }) => (
   <Autocomplete
     {...optionProps(options)}
     loading={loading}
+    onOpen={onOpen}
     value={value || null}
     onChange={(_e, v) => onChange(v || "")}
     size="small"
@@ -251,7 +252,7 @@ const stepperChipSx = {
 };
 
 /* ── Multi-value dropdown (chips) ────────────────────────────────────────── */
-const MultiSelectField = ({ label, options, value, onChange, loading = false }) => (
+const MultiSelectField = ({ label, options, value, onChange, loading = false, onOpen }) => (
   <Autocomplete
     multiple
     disableCloseOnSelect
@@ -262,6 +263,7 @@ const MultiSelectField = ({ label, options, value, onChange, loading = false }) 
       stepperChipSx
     )}
     loading={loading}
+    onOpen={onOpen}
     value={value || []}
     onChange={(_e, v) => onChange(v || [])}
     size="small"
@@ -366,45 +368,45 @@ const optionProps = (options = []) => ({
   getOptionLabel: (k) => options.find((o) => o.key === k)?.label ?? k ?? "",
 });
 
-/* Loads every dropdown in parallel once; one failing API doesn't block the others */
-const useDropdownOptions = () => {
+/* Loads ONE dropdown's options from its API the first time that dropdown is
+   opened — not all of them at once. Results are cached, so re-opening (or a
+   second field using the same list, e.g. time zones) doesn't call the API again. */
+const useLazyDropdownOptions = () => {
   const [options, setOptions] = useState(FALLBACK_OPTIONS);
-  const [loading, setLoading] = useState(true);
+  const [loadingKeys, setLoadingKeys] = useState({});
+  const requested = useRef(new Set());
 
-  useEffect(() => {
-    let active = true;
-    const token = getItem(CANDIDATE_ACCESS_TOKEN) || getItem(ACCESS_TOKEN);
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const entries = Object.entries(DROPDOWN_ENDPOINTS);
-
-    Promise.allSettled(entries.map(([, url]) => candidateApi.get(url, { headers }))).then(
-      (results) => {
-        if (!active) return;
-        const next = { ...FALLBACK_OPTIONS };
-        results.forEach((result, i) => {
-          const [key, url] = entries[i];
-          const list = result.status === "fulfilled" ? extractOptions(result.value) : [];
-          if (list.length) {
-            next[key] = list; // API data always wins
-          } else if (FALLBACK_OPTIONS[key]) {
-            next[key] = FALLBACK_OPTIONS[key];
-            console.warn(`Dropdown API not available yet, using fallback: ${url}`);
-          } else {
-            next[key] = [];
-            console.error(`Dropdown API failed: ${url}`, result.reason);
-          }
-        });
-        setOptions(next);
-        setLoading(false);
+  const load = useCallback(async (key) => {
+    const url = DROPDOWN_ENDPOINTS[key];
+    if (!url || requested.current.has(key)) return;
+    requested.current.add(key);
+    setLoadingKeys((prev) => ({ ...prev, [key]: true }));
+    try {
+      const token = getItem(CANDIDATE_ACCESS_TOKEN) || getItem(ACCESS_TOKEN);
+      const res = await candidateApi.get(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const list = extractOptions(res);
+      if (list.length) {
+        setOptions((prev) => ({ ...prev, [key]: list })); // API data always wins
+      } else if (!FALLBACK_OPTIONS[key]) {
+        setOptions((prev) => ({ ...prev, [key]: [] }));
       }
-    );
-
-    return () => {
-      active = false;
-    };
+    } catch (error) {
+      if (FALLBACK_OPTIONS[key]) {
+        console.warn(`Dropdown API not available yet, using fallback: ${url}`);
+      } else {
+        console.error(`Dropdown API failed: ${url}`, error);
+        requested.current.delete(key); // allow a retry next time it's opened
+      }
+    } finally {
+      setLoadingKeys((prev) => ({ ...prev, [key]: false }));
+    }
   }, []);
 
-  return { options, loading };
+  const isLoading = useCallback((key) => !!loadingKeys[key], [loadingKeys]);
+
+  return { options, load, isLoading };
 };
 
 /* ── Helpers for API <-> form conversion ─────────────────────────────────── */
@@ -548,7 +550,7 @@ const PersonalDetails = ({ handleBack, activeStep, handleStepClick }) => {
   const { data: countriesData, isLoading: isCountriesLoading } =
     useGetCandidateCountriesQuery();
   const [triggerGetLocations] = useLazyGetCandidateLocationsQuery();
-  const { options: dd, loading: ddLoading } = useDropdownOptions();
+  const { options: dd, load: loadDd, isLoading: isDdLoading } = useLazyDropdownOptions();
 
   // Fields ordered to match the API payload shape
   const [localData, setLocalData] = useState({
@@ -846,12 +848,8 @@ useEffect(() => {
     referralSource: dd.referralSources,
   };
 
-  // Old/invalid values sitting in Redux or the form are cleaned up as soon as options load
-  useEffect(() => {
-    if (ddLoading) return;
-    setLocalData((prev) => sanitizeByOptions(prev, fieldOptions));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ddLoading]);
+  // Values are checked against their options when saving (handleSaveAndNext).
+  // Options load lazily, so a list that was never opened leaves its value as-is.
 
   const handleSaveAndNext = () => {
   // if (!validate()) return;
@@ -1178,7 +1176,8 @@ useEffect(() => {
                 <MultiSelectField
                   label="Preferred Employment Types"
                   options={dd.employmentTypes}
-                  loading={ddLoading}
+                  loading={isDdLoading("employmentTypes")}
+                  onOpen={() => loadDd("employmentTypes")}
                   value={localData.preferredEmploymentTypes}
                   onChange={handleValue("preferredEmploymentTypes")}
                 />
@@ -1187,7 +1186,8 @@ useEffect(() => {
                 <MultiSelectField
                   label="Preferred Payroll Types"
                   options={dd.engagementTypes}
-                  loading={ddLoading}
+                  loading={isDdLoading("engagementTypes")}
+                  onOpen={() => loadDd("engagementTypes")}
                   value={localData.preferredEngagementTypes}
                   onChange={handleValue("preferredEngagementTypes")}
                 />
@@ -1196,7 +1196,8 @@ useEffect(() => {
                 <MultiSelectField
                   label="Preferred Work Arrangements"
                   options={dd.workArrangements}
-                  loading={ddLoading}
+                  loading={isDdLoading("workArrangements")}
+                  onOpen={() => loadDd("workArrangements")}
                   value={localData.preferredWorkArrangements}
                   onChange={handleValue("preferredWorkArrangements")}
                 />
@@ -1205,7 +1206,8 @@ useEffect(() => {
                 <MultiSelectField
                   label="Preferred Contact Methods"
                   options={dd.contactMethods}
-                  loading={ddLoading}
+                  loading={isDdLoading("contactMethods")}
+                  onOpen={() => loadDd("contactMethods")}
                   value={localData.preferredContactMethods}
                   onChange={handleValue("preferredContactMethods")}
                 />
@@ -1223,7 +1225,8 @@ useEffect(() => {
                 <MultiSelectField
                   label="Current US Work Authorizations"
                   options={dd.usWorkAuthorizations}
-                  loading={ddLoading}
+                  loading={isDdLoading("usWorkAuthorizations")}
+                  onOpen={() => loadDd("usWorkAuthorizations")}
                   value={localData.currentUsWorkAuthorizations}
                   onChange={handleValue("currentUsWorkAuthorizations")}
                 />
@@ -1245,7 +1248,8 @@ useEffect(() => {
                 <SelectField
                   label="Employer Sponsorship"
                   options={dd.employerSponsorship}
-                  loading={ddLoading}
+                  loading={isDdLoading("employerSponsorship")}
+                  onOpen={() => loadDd("employerSponsorship")}
                   value={localData.employerSponsorship}
                   onChange={handleValue("employerSponsorship")}
                 />
@@ -1260,7 +1264,8 @@ useEffect(() => {
                 <SelectField
                   label="Compensation Basis"
                   options={dd.compensationBasis}
-                  loading={ddLoading}
+                  loading={isDdLoading("compensationBasis")}
+                  onOpen={() => loadDd("compensationBasis")}
                   value={localData.compensationBasis}
                   onChange={handleValue("compensationBasis")}
                 />
@@ -1269,7 +1274,8 @@ useEffect(() => {
                 <SelectField
                   label="Rate Dependent on Benefits"
                   options={dd.benefitBasedRate}
-                  loading={ddLoading}
+                  loading={isDdLoading("benefitBasedRate")}
+                  onOpen={() => loadDd("benefitBasedRate")}
                   value={localData.rateDependentOnBenefits}
                   onChange={handleValue("rateDependentOnBenefits")}
                 />
@@ -1278,7 +1284,8 @@ useEffect(() => {
                 <MultiSelectField
                   label="Important W2 Benefits"
                   options={dd.w2Benefits}
-                  loading={ddLoading}
+                  loading={isDdLoading("w2Benefits")}
+                  onOpen={() => loadDd("w2Benefits")}
                   value={localData.importantW2Benefits}
                   onChange={handleValue("importantW2Benefits")}
                 />
@@ -1297,7 +1304,8 @@ useEffect(() => {
             <MultiSelectField
               label="Preferred Job Categories"
               options={dd.jobCategories}
-              loading={ddLoading}
+              loading={isDdLoading("jobCategories")}
+              onOpen={() => loadDd("jobCategories")}
               value={localData.preferredJobCategories}
               onChange={handleValue("preferredJobCategories")}
             />
@@ -1306,7 +1314,8 @@ useEffect(() => {
             <MultiSelectField
               label="Preferred Seniority Levels"
               options={dd.seniorityLevels}
-              loading={ddLoading}
+              loading={isDdLoading("seniorityLevels")}
+              onOpen={() => loadDd("seniorityLevels")}
               value={localData.preferredSeniorityLevels}
               onChange={handleValue("preferredSeniorityLevels")}
             />
@@ -1315,7 +1324,8 @@ useEffect(() => {
             <MultiSelectField
               label="Preferred Company Types"
               options={dd.companyTypes}
-              loading={ddLoading}
+              loading={isDdLoading("companyTypes")}
+              onOpen={() => loadDd("companyTypes")}
               value={localData.preferredCompanyTypes}
               onChange={handleValue("preferredCompanyTypes")}
             />
@@ -1324,7 +1334,8 @@ useEffect(() => {
             <MultiSelectField
               label="Most Important Opportunity Factors"
               options={dd.opportunityFactors}
-              loading={ddLoading}
+              loading={isDdLoading("opportunityFactors")}
+              onOpen={() => loadDd("opportunityFactors")}
               value={localData.mostImportantOpportunityFactors}
               onChange={handleValue("mostImportantOpportunityFactors")}
             />
@@ -1333,7 +1344,8 @@ useEffect(() => {
             <SelectField
               label="Location Preference"
               options={dd.locationPreferences}
-              loading={ddLoading}
+              loading={isDdLoading("locationPreferences")}
+              onOpen={() => loadDd("locationPreferences")}
               value={localData.locationPreference}
               onChange={handleValue("locationPreference")}
             />
@@ -1342,7 +1354,8 @@ useEffect(() => {
             <SelectField
               label="Preferred Shift"
               options={dd.workShifts}
-              loading={ddLoading}
+              loading={isDdLoading("workShifts")}
+              onOpen={() => loadDd("workShifts")}
               value={localData.preferredShift}
               onChange={handleValue("preferredShift")}
             />
@@ -1357,7 +1370,8 @@ useEffect(() => {
             <SelectField
               label="Current Job Search Status"
               options={dd.jobSearchStatus}
-              loading={ddLoading}
+              loading={isDdLoading("jobSearchStatus")}
+              onOpen={() => loadDd("jobSearchStatus")}
               value={localData.currentJobSearchStatus}
               onChange={handleValue("currentJobSearchStatus")}
             />
@@ -1366,7 +1380,8 @@ useEffect(() => {
             <SelectField
               label="Current Employment Status"
               options={dd.employmentStatus}
-              loading={ddLoading}
+              loading={isDdLoading("employmentStatus")}
+              onOpen={() => loadDd("employmentStatus")}
               value={localData.currentEmploymentStatus}
               onChange={handleValue("currentEmploymentStatus")}
             />
@@ -1375,7 +1390,8 @@ useEffect(() => {
             <SelectField
               label="Current Time Zone"
               options={dd.timezones}
-              loading={ddLoading}
+              loading={isDdLoading("timezones")}
+              onOpen={() => loadDd("timezones")}
               value={localData.currentTimeZone}
               onChange={handleValue("currentTimeZone")}
             />
@@ -1386,7 +1402,8 @@ useEffect(() => {
               <SelectField
                 label="Preferred US Time Zone"
                 options={dd.preferredUsTimeZones}
-                loading={ddLoading}
+                loading={isDdLoading("preferredUsTimeZones")}
+                onOpen={() => loadDd("preferredUsTimeZones")}
                 value={localData.preferredUsTimeZone}
                 onChange={handleValue("preferredUsTimeZone")}
               />
@@ -1397,7 +1414,8 @@ useEffect(() => {
             <MultiSelectField
               label="Preferred Interview Days"
               options={dd.interviewDays}
-              loading={ddLoading}
+              loading={isDdLoading("interviewDays")}
+              onOpen={() => loadDd("interviewDays")}
               value={localData.preferredInterviewDays}
               onChange={handleValue("preferredInterviewDays")}
             />
@@ -1406,7 +1424,8 @@ useEffect(() => {
             <SelectField
               label="Preferred Interview Time"
               options={dd.interviewPreferenceTypes}
-              loading={ddLoading}
+              loading={isDdLoading("interviewPreferenceTypes")}
+              onOpen={() => loadDd("interviewPreferenceTypes")}
               value={localData.preferredInterviewTime}
               onChange={handleValue("preferredInterviewTime")}
             />
@@ -1415,7 +1434,8 @@ useEffect(() => {
             <SelectField
               label="Interview Time Zone"
               options={dd.timezones}
-              loading={ddLoading}
+              loading={isDdLoading("timezones")}
+              onOpen={() => loadDd("timezones")}
               value={localData.interviewTimeZone}
               onChange={handleValue("interviewTimeZone")}
             />
@@ -1432,6 +1452,8 @@ useEffect(() => {
             <SelectField
               label="How did you hear about us?"
               options={dd.referralSources}
+              loading={isDdLoading("referralSources")}
+              onOpen={() => loadDd("referralSources")}
               value={localData.referralSource}
               onChange={handleValue("referralSource")}
             />

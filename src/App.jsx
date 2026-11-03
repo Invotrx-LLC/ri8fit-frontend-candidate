@@ -26,6 +26,7 @@ import CandidateGapAnalysis from "./pages/Candidate/gap analysis";
 import CandidateReqisitionJobDetails from "./pages/Candidate/requisitions/CandidateReqisitionJobDetails";
 import { ACCESS_TOKEN, clearLocalStorage } from "./utils/helper";
 import { refreshMeSilently } from "./services/meService";
+import GoogleCallback from "./services/GoogleCallback";
 import { useSelector } from "react-redux";
 
 const CandidateLayout = lazy(() => import("./components/CandidateLayout"));
@@ -74,6 +75,9 @@ function App() {
 
         <ToastContainer />
 
+        {/* Finishes Google sign-in on whichever page the backend redirects to */}
+        <GoogleCallback />
+
         <Routes>
           <Route index path="/" element={<Ri8FitLanding />} />
           <Route path="/unauthorized" element={<Unauthorized />} />
@@ -88,6 +92,9 @@ function App() {
                 element={<CandidateVerification />}
               />
               <Route path="signup" element={<CandidateSignup />} />
+              {/* Optional dedicated redirect target for Google — GoogleCallback
+                  above reads the tokens and navigates away from here */}
+              <Route path="google-callback" element={<CandidateLogin />} />
               <Route path="profile-register" element={<CandidateProfile />} />
               <Route
                 path="profile-details"

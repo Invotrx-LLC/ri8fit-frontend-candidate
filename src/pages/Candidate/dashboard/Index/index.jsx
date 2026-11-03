@@ -15,8 +15,12 @@ import EducationSection from "../Education/EductaionSection";
 import CertificationSection from "../Certifications/CertificationSection";
 import { useDispatch } from "react-redux";
 import { candidateUpdateFormData } from "../../../../store/slices/candidateSlice";
-import Sidebar from "../Sidebar/Sidebar"; // Adjust the path based on your file structure
+import Sidebar from "../Sidebar/Sidebar"; 
 import Personaldetails from "../Personaldetails/Personaldetails";
+import ProfileCompletionCard from "../ProfileCompletion/ProfileCompletionCard";
+import ProfileCompletionDrawer from "../ProfileCompletion/ProfileCompletionDrawer";
+import useProfileCompletion from "../ProfileCompletion/useProfileCompletion";
+import { sectionForFieldKey } from "../ProfileCompletion/profileCompletionConfig";
 
 const StyledPaper = styled(Paper)(({ theme }) => ({
   borderRadius: 8,
@@ -29,12 +33,11 @@ const StyledPaper = styled(Paper)(({ theme }) => ({
   },
 }));
 
-// NOTE: ids here now match the ref keys used on the actual rendered
-// section divs below. Previously this list said "resume" while the
-// div ref that was actually mounted used "profileimage" — that
-// mismatch is what caused the sidebar to highlight the wrong tab.
+// Ids must match the ref keys on the section divs below.
+// Resume uses "resume" — the sidebar hides any "profileimage" row, which is
+// why Resume was missing from the Profile Completion list.
 const SECTION_CONFIG = [
-  { id: "profileimage", label: "Resume", completed: false },
+  { id: "resume", label: "Resume", completed: false },
   { id: "skills", label: "Key Skills", completed: false },
   { id: "employment", label: "Employment History", completed: false },
   { id: "education", label: "Education", completed: false },
@@ -50,7 +53,7 @@ const ProfileSections = memo(function ProfileSections({
   return (
     <Box sx={{ display: "flex", flexDirection: "column" }}>
       <Box sx={{ my: { xs: 0, sm: 1, md: 2 } }} />
-      <div ref={(el) => (sectionRefs.current.profileimage = el)}>
+      <div ref={(el) => (sectionRefs.current.resume = el)}>
         <ResumeSection
           resumeInfo={basicInfoResponse}
           onSectionComplete={handleSectionComplete}
@@ -109,10 +112,18 @@ const CandidateProfilePage = () => {
   const [basicInfoResponse, setBasicInfoResponse] = useState(null);
   const [sections, setSections] = useState(SECTION_CONFIG);
 
+  // ── Profile Completion: card in the sidebar, full breakdown in a drawer ──
+  const {
+    completion,
+    isLoading: completionLoading,
+    refresh: refreshCompletion,
+  } = useProfileCompletion();
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
+
   // Keys here must stay identical to: SECTION_CONFIG ids above, and the
   // ref callbacks on the JSX below. One string, three places, always in sync.
   const sectionRefs = useRef({
-    profileimage: null,
+    resume: null,
     skills: null,
     employment: null,
     education: null,
@@ -130,26 +141,67 @@ const CandidateProfilePage = () => {
     }
   }, []);
 
-  const handleSectionComplete = useCallback((sectionId, isCompleted) => {
+  // Clicking a "Boost your profile" item: close the drawer, scroll to the card
+  // that holds that detail and briefly highlight it.
+  const handleBoostClick = useCallback(
+    (item) => {
+      setBreakdownOpen(false);
+      const sectionId = sectionForFieldKey(item?.field_key);
+      setTimeout(() => {
+        scrollToSection(sectionId);
+        const el = sectionRefs.current[sectionId];
+        if (el) {
+          el.style.transition = "box-shadow .3s ease";
+          el.style.borderRadius = "14px";
+          el.style.boxShadow = "0 0 0 3px rgba(28,111,103,.35)";
+          setTimeout(() => {
+            el.style.boxShadow = "none";
+          }, 1600);
+        }
+      }, 250);
+    },
+    [scrollToSection]
+  );
+
+  // Every section reports whether it has data (on load AND after add / edit /
+  // delete), so data already filled by the resume parser counts as complete.
+  // Only updates when the status actually changes, so sections can call this
+  // freely from their effects without causing re-render loops.
+  const completedRef = useRef({});
+  // Optional 3rd argument: { missing: ["Date of Birth", ...] } — the fields
+  // still empty in that section, shown in the sidebar as "N left".
+  const handleSectionComplete = useCallback((sectionId, isCompleted, meta = {}) => {
+    const done = !!isCompleted;
+    const missing = Array.isArray(meta.missing) ? meta.missing : [];
+    const signature = `${done}|${missing.join(",")}`;
+    if (completedRef.current[sectionId] === signature) return;
+    const isFirstReport = completedRef.current[sectionId] === undefined;
+    completedRef.current[sectionId] = signature;
+
+    // A section changed after the first load (add / edit / delete) →
+    // fetch the new score. Debounced inside the hook.
+    if (!isFirstReport) refreshCompletion();
+
     setSections((prevSections) =>
       prevSections.map((section) =>
-        section.id === sectionId
-          ? { ...section, completed: isCompleted }
-          : section
+        section.id === sectionId ? { ...section, completed: done, missing } : section
       )
     );
     dispatch(
       candidateUpdateFormData({
         section: sectionId,
-        updates: isCompleted
+        updates: done
           ? { ...basicInfoResponse?.[sectionId], completed: true }
           : null,
       })
     );
-  }, [basicInfoResponse, dispatch]);
+  }, [basicInfoResponse, dispatch, refreshCompletion]);
 
   // Add this state (if not already added)
-  const [apiPercentage, setApiPercentage] = useState(0);
+  // null → the sidebar works the % out from the sections that are done.
+  // (The profile-completion API call below is commented out, so a fixed 0
+  // here always showed 0%.)
+  const [apiPercentage, setApiPercentage] = useState(null);
 
   // Replace your fetchApi with this:
   // const fetchApi = useCallback(async () => {
@@ -318,7 +370,17 @@ const CandidateProfilePage = () => {
                   sections={sections}
                   scrollToSection={scrollToSection}
                   activeSection={activeSection}
-                  apiPercentage={apiPercentage}
+                  apiPercentage={completion?.completion_percentage ?? apiPercentage}
+                  completionCard={
+                    completion || completionLoading ? (
+                      <ProfileCompletionCard
+                        completion={completion}
+                        isLoading={completionLoading}
+                        onOpenBreakdown={() => setBreakdownOpen(true)}
+                        onBoostClick={handleBoostClick}
+                      />
+                    ) : null
+                  }
                 />
               </Grid>
               {/* Sections */}
@@ -333,6 +395,14 @@ const CandidateProfilePage = () => {
           </StyledPaper>
         </Grid>
       </Grid>
+
+      {/* Full Profile Completion breakdown */}
+      <ProfileCompletionDrawer
+        open={breakdownOpen}
+        onClose={() => setBreakdownOpen(false)}
+        completion={completion}
+        onBoostClick={handleBoostClick}
+      />
     </Box>
   );
 };

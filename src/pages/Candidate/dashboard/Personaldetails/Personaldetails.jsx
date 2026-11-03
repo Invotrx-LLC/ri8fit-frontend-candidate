@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
   Typography,
@@ -288,47 +288,45 @@ const toKey = (options, v) => {
 /* Label for a saved key — falls back to the key itself until options are loaded */
 const labelFor = (options = [], k) => options.find((o) => o.key === k)?.label ?? k ?? "";
 
-/* Loads every dropdown in parallel the first time it's enabled (when the dialog opens) */
-const useDropdownOptions = (enabled) => {
+/* Loads ONE dropdown's options from its API the first time that dropdown is
+   opened — not all of them at once. Results are cached, so re-opening (or a
+   second field using the same list, e.g. time zones) doesn't call the API again. */
+const useLazyDropdownOptions = () => {
   const [options, setOptions] = useState(FALLBACK_OPTIONS);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [loadingKeys, setLoadingKeys] = useState({});
+  const requested = useRef(new Set());
 
-  useEffect(() => {
-    if (!enabled || loaded) return;
-    let active = true;
-    setLoading(true);
-    const token = getItem(CANDIDATE_ACCESS_TOKEN) || getItem(ACCESS_TOKEN);
-    const headers = token ? { Authorization: `Bearer ${token}` } : {};
-    const entries = Object.entries(DROPDOWN_ENDPOINTS);
-
-    Promise.allSettled(entries.map(([, url]) => candidateApi.get(url, { headers }))).then((results) => {
-      if (!active) return;
-      const next = { ...FALLBACK_OPTIONS };
-      results.forEach((result, i) => {
-        const [key, url] = entries[i];
-        const list = result.status === "fulfilled" ? extractOptions(result.value) : [];
-        if (list.length) {
-          next[key] = list; // API data always wins
-        } else if (FALLBACK_OPTIONS[key]) {
-          next[key] = FALLBACK_OPTIONS[key];
-          console.warn(`Dropdown API not available yet, using fallback: ${url}`);
-        } else {
-          next[key] = [];
-          console.error(`Dropdown API failed: ${url}`, result.reason);
-        }
+  const load = useCallback(async (key) => {
+    const url = DROPDOWN_ENDPOINTS[key];
+    if (!url || requested.current.has(key)) return;
+    requested.current.add(key);
+    setLoadingKeys((prev) => ({ ...prev, [key]: true }));
+    try {
+      const token = getItem(CANDIDATE_ACCESS_TOKEN) || getItem(ACCESS_TOKEN);
+      const res = await candidateApi.get(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      setOptions(next);
-      setLoading(false);
-      setLoaded(true);
-    });
+      const list = extractOptions(res);
+      if (list.length) {
+        setOptions((prev) => ({ ...prev, [key]: list })); // API data always wins
+      } else if (!FALLBACK_OPTIONS[key]) {
+        setOptions((prev) => ({ ...prev, [key]: [] }));
+      }
+    } catch (error) {
+      if (FALLBACK_OPTIONS[key]) {
+        console.warn(`Dropdown API not available yet, using fallback: ${url}`);
+      } else {
+        console.error(`Dropdown API failed: ${url}`, error);
+        requested.current.delete(key); // allow a retry next time it's opened
+      }
+    } finally {
+      setLoadingKeys((prev) => ({ ...prev, [key]: false }));
+    }
+  }, []);
 
-    return () => {
-      active = false;
-    };
-  }, [enabled, loaded]);
+  const isLoading = useCallback((key) => !!loadingKeys[key], [loadingKeys]);
 
-  return { options, loading };
+  return { options, load, isLoading };
 };
 
 const toArray = (v) =>
@@ -488,7 +486,7 @@ function Personaldetails({ onSectionComplete }) {
   const [updatePersonalDetails] = useUpdatePersonalDetailsMutation();
   const [workAuthOptions, setWorkAuthOptions] = useState([]);
   const [triggerGetWorkAuthorizations] = useLazyGetWorkAuthorizationsQuery();
-  const { options: dd, loading: ddLoading } = useDropdownOptions(open);
+  const { options: dd, load: loadDd, isLoading: isDdLoading } = useLazyDropdownOptions();
 
   const [personalData, setPersonalData] = useState({
     gender: "",
@@ -541,6 +539,39 @@ function Personaldetails({ onSectionComplete }) {
     });
     setSelectedCountry(candidateCompleateDetails?.country || "");
   }, [candidateCompleateDetails]);
+
+  // Tell the Profile Completion sidebar whether personal details are complete.
+  // Done only when EVERY required field is filled — the same fields the Save
+  // button validates. Optional extra preferences don't count.
+  const REQUIRED_PERSONAL_FIELDS = [
+    ["date_of_birth", "Date of Birth"],
+    ["gender", "Gender"],
+    ["marital_status", "Marital Status"],
+    ["nationality", "Nationality"],
+    ["present_address", "Current Address"],
+    ["address", "Permanent Address"],
+    ["country", "Country"],
+    ["state", "City & State"],
+    ["pincode", "Pincode"],
+  ];
+  const missingRequired = REQUIRED_PERSONAL_FIELDS.filter(
+    ([k]) => String(candidateCompleateDetails?.[k] ?? "").trim() === ""
+  ).map(([, label]) => label);
+
+  useEffect(() => {
+    if (!candidateCompleateDetails) {
+      if (!isProfileLoading)
+        onSectionComplete?.("personal", false, { missing: REQUIRED_PERSONAL_FIELDS.map(([, l]) => l) });
+      return;
+    }
+    const d = candidateCompleateDetails;
+    // Labels of the required fields that are still empty — shown in the sidebar
+    const missing = REQUIRED_PERSONAL_FIELDS.filter(([k]) => String(d[k] ?? "").trim() === "").map(
+      ([, label]) => label
+    );
+    onSectionComplete?.("personal", missing.length === 0, { missing });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candidateCompleateDetails, isProfileLoading, onSectionComplete]);
 
   const handleOpen = () => setOpen(true);
   const handleClose = () => {
@@ -751,7 +782,7 @@ function Personaldetails({ onSectionComplete }) {
 
         refetchPersonalDetails();
 
-        onSectionComplete("personal", true);
+        onSectionComplete?.("personal", true);
         handleClose();
       } catch (error) {
         console.error("Error updating personal details:", error);
@@ -829,7 +860,9 @@ function Personaldetails({ onSectionComplete }) {
         sx={isMulti ? singleLineMultiSx : undefined}
         options={(dd[f.options] || []).map((o) => o.key)}
         getOptionLabel={(k) => labelFor(dd[f.options], k)}
-        loading={ddLoading}
+        loading={isDdLoading(f.options)}
+        // Fetch this field's options only when the user opens it
+        onOpen={() => loadDd(f.options)}
         value={f.type === "multi" ? value || [] : value || null}
         onChange={(_e, v) => onChange(f.type === "multi" ? v || [] : v || "")}
         size="small"
@@ -882,6 +915,50 @@ function Personaldetails({ onSectionComplete }) {
         <Typography sx={{ color: palette.muted, fontSize: 13.5, mt: 2 }}>
           No personal details added yet.
         </Typography>
+      )}
+
+      {/* Required fields still empty → amber banner with a shortcut to fill them */}
+      {!isProfileLoading && missingRequired.length > 0 && (
+        <Box
+          sx={{
+            mt: 2,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 1,
+            px: 1.75,
+            py: 1.25,
+            bgcolor: "#FFFBEB",
+            border: "1px solid #FDE68A",
+            borderRadius: "10px",
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 700, color: "#92400E" }}>
+              {missingRequired.length} required field{missingRequired.length > 1 ? "s" : ""} left
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, color: "#92400E", mt: 0.25 }}>
+              {missingRequired.join(" · ")}
+            </Typography>
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={handleOpen}
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              borderRadius: "8px",
+              color: palette.teal,
+              borderColor: palette.teal,
+              bgcolor: "#fff",
+              "&:hover": { bgcolor: palette.tealSoft, borderColor: palette.tealDeep },
+            }}
+          >
+            Complete now
+          </Button>
+        </Box>
       )}
 
       {/* Display saved personal details */}

@@ -13,7 +13,7 @@ import {
 } from "../../../../store/api/settings/CandidatePortalApis";
 import { palette, fonts } from "../../../../theme/candidateTokens";
 
-const EmploymentForm = ({ employmentHistroyInfo }) => {
+const EmploymentForm = ({ employmentHistroyInfo, onSectionComplete }) => {
   const [open, setOpen] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
   const [employmentHistory, setEmploymentHistory] = useState([]);
@@ -66,6 +66,13 @@ const EmploymentForm = ({ employmentHistroyInfo }) => {
       triggerGetCandidateEmployment();
     }
   }, [employmentHistroyInfo]);
+
+  // Tell the Profile Completion sidebar whether there is any employment
+  // (includes jobs the resume parser already filled in)
+  useEffect(() => {
+    if (!employmentHistroyInfo && employmentData === undefined) return; // still loading
+    onSectionComplete?.("employment", employmentHistory.length > 0);
+  }, [employmentHistory.length, employmentHistroyInfo, employmentData, onSectionComplete]);
 
   // Compensation fields — same rules for current and latest-previous roles.
   // "Fixed" breakdown → the whole current salary is the fixed component.

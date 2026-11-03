@@ -16,8 +16,9 @@ import {
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import PsychologyOutlinedIcon from "@mui/icons-material/PsychologyOutlined";
-import EditIcon from "@mui/icons-material/Edit";
+import AddRoundedIcon from "@mui/icons-material/AddRounded";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import KeyboardArrowDownRoundedIcon from "@mui/icons-material/KeyboardArrowDownRounded";
 import { AppContext } from "../../../../AppContext";
 import candidateApi from "../../../../services/candidateApi";
 import {
@@ -27,6 +28,9 @@ import { palette, fonts } from "../../../../theme/candidateTokens";
 
 const ACCENT = "#2B6F71";
 const ACCENT_HOVER = "#1F5557";
+
+/* Skills shown before "Show all" — the rest stay hidden until expanded */
+const VISIBLE_SKILLS = 12;
 
 const dialogFieldSx = {
   "& .MuiOutlinedInput-root": {
@@ -47,7 +51,7 @@ const GroupHeading = ({ icon: Icon, title }) => (
   </Box>
 );
 
-function SkillsSection({ keySkillInfo, completeDetailsApi }) {
+function SkillsSection({ keySkillInfo, completeDetailsApi, onSectionComplete }) {
   const { formData = {}, setFormData } = useContext(AppContext);
   const [skills, setSkills] = useState([]);
   const [openDialog, setOpenDialog] = useState(false);
@@ -55,6 +59,7 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
   const [editIndex, setEditIndex] = useState(null);
   const [suggestions, setSuggestions] = useState([]);
   const [error, setError] = useState(null);
+  const [showAllSkills, setShowAllSkills] = useState(false);
 
   const availableSkills = [
     "SDTM",
@@ -95,7 +100,24 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
     isLoading,
     refetch,
   } = useGetCandidateKeySkillsQuery();
-  const skillId = keySkillsResponse?.data?.candidate_id;
+  // Candidate id for the skill APIs. Falls back to other id fields the
+  // key-skills response may use, so the URL never ends in "/undefined".
+  const skillId =
+    keySkillsResponse?.data?.candidate_id ??
+    keySkillsResponse?.data?.skill_info?.candidate_id ??
+    keySkillsResponse?.data?.id;
+
+  // Summary / availability / TA experience are re-sent with every skills save,
+  // so they must be the CURRENT values — otherwise saving skills wipes the
+  // summary. skill_info can be an array (old) or an object (new), and can come
+  // from the keySkillInfo prop or the key-skills GET response.
+  const pickInfo = (src) =>
+    Array.isArray(src?.skill_info) ? src.skill_info[0] : src?.skill_info;
+  const skillInfo = {
+    ...(keySkillsResponse?.data || {}),
+    ...(pickInfo(keySkillsResponse?.data) || {}),
+    ...(pickInfo(keySkillInfo) || {}),
+  };
 
   // Initialize skills from keySkillInfo or formData.itSkills
   useEffect(() => {
@@ -113,6 +135,12 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
       itSkills: initialSkills,
     }));
   }, [keySkillsResponse, setFormData]);
+
+  // Tell the Profile Completion sidebar whether there are skills
+  useEffect(() => {
+    if (keySkillsResponse === undefined) return; // still loading
+    onSectionComplete?.("skills", skills.length > 0);
+  }, [skills.length, keySkillsResponse, onSectionComplete]);
 
   const handleAddClick = () => {
     setCurrentSkill("");
@@ -172,14 +200,18 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
     }
 
     const skillsString = updatedSkills.join(", ");
+    if (!skillId) {
+      setError("Couldn't find your profile id. Please refresh the page and try again.");
+      console.error("Save skill: no candidate id in key-skills response", keySkillsResponse);
+      return;
+    }
     try {
       const response = await candidateApi.put(
         `/candidates/update-skill-info/${skillId}`,
         {
-          summary: keySkillInfo?.skill_info[0]?.summary || "",
-          availability: keySkillInfo?.skill_info[0]?.availability || 0,
-          ta_experience_combined:
-            keySkillInfo?.skill_info[0]?.ta_experience_combined || "",
+          summary: skillInfo?.summary || "",
+          availability: skillInfo?.availability || 0,
+          ta_experience_combined: skillInfo?.ta_experience_combined || "",
           key_skills: skillsString,
         },
         {
@@ -197,11 +229,18 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
         setEditIndex(null);
         setSuggestions([]);
         setError(null);
-        completeDetailsApi();
+        // Optional — the profile page doesn't pass it. Calling it when it was
+        // undefined threw AFTER a successful save, which showed
+        // "Failed to save skills" even though the skills were saved.
+        completeDetailsApi?.();
       }
     } catch (err) {
-      setError("Failed to save skills. Please try again.");
-      console.error("Save skill error:", err);
+      setError(
+        err?.response?.status === 404
+          ? "Your skills record isn't set up yet. Please contact support."
+          : err?.response?.data?.message || "Failed to save skills. Please try again."
+      );
+      console.error("Save skill error:", err?.response?.data || err, { skillId });
     }
   };
 
@@ -260,24 +299,46 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
 
   return (
     <Box sx={{ bgcolor: "#fff", borderRadius: 2, p: 2, mb: 2, boxShadow: 1 }}>
-      <Box display="flex" alignItems="center" gap={0.5}>
-        <Typography variant="subtitle1" fontWeight={600}>
-          Key Skills
-        </Typography>
-        <IconButton
+      {/* Header: title + count on the left, "+ Add Skills" on the right */}
+      <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
+        <Box display="flex" alignItems="center" gap={0.75}>
+          <Typography variant="subtitle1" fontWeight={600}>
+            Key Skills
+          </Typography>
+          {skills.length > 0 && (
+            <Box
+              component="span"
+              sx={{
+                fontSize: 12,
+                fontWeight: 700,
+                color: ACCENT,
+                bgcolor: "#EAF5F4",
+                borderRadius: "10px",
+                px: 0.9,
+                py: 0.1,
+              }}
+            >
+              {skills.length}
+            </Box>
+          )}
+        </Box>
+        <Button
           size="small"
+          variant="contained"
+          disableElevation
+          startIcon={<AddRoundedIcon sx={{ fontSize: 18 }} />}
           onClick={handleAddClick}
           sx={{
             bgcolor: ACCENT,
-            color: "#fff",
-            borderRadius: "6px",
-            width: 26,
-            height: 26,
+            textTransform: "none",
+            fontWeight: 600,
+            borderRadius: "8px",
+            px: 1.75,
             "&:hover": { bgcolor: ACCENT_HOVER },
           }}
         >
-          <EditIcon sx={{ fontSize: "15px" }} />
-        </IconButton>
+          Add Skills
+        </Button>
       </Box>
 
       {error && (
@@ -288,7 +349,7 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
 
       <Box mt={{ xs: 1, sm: 1.5, md: 2 }} display="flex" gap={1} flexWrap="wrap">
         {skills.length > 0 ? (
-          skills.map((skill, index) => (
+          (showAllSkills ? skills : skills.slice(0, VISIBLE_SKILLS)).map((skill, index) => (
             <Chip
               key={index}
               onClick={() => handleEditClick(index)}
@@ -344,7 +405,51 @@ function SkillsSection({ keySkillInfo, completeDetailsApi }) {
         ) : (
           <Typography color="text.secondary">No skills available</Typography>
         )}
+
+        {/* "+N more" chip at the end of the visible list */}
+        {!showAllSkills && skills.length > VISIBLE_SKILLS && (
+          <Chip
+            label={`+${skills.length - VISIBLE_SKILLS} more`}
+            onClick={() => setShowAllSkills(true)}
+            sx={{
+              height: 34,
+              bgcolor: "#EAF5F4",
+              color: ACCENT,
+              fontWeight: 700,
+              border: "1px solid transparent",
+              "&:hover": { bgcolor: "#DCEFED", borderColor: ACCENT },
+            }}
+          />
+        )}
       </Box>
+
+      {/* Show all / Show less */}
+      {skills.length > VISIBLE_SKILLS && (
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 1.5 }}>
+          <Button
+            size="small"
+            onClick={() => setShowAllSkills((prev) => !prev)}
+            endIcon={
+              <KeyboardArrowDownRoundedIcon
+                sx={{
+                  transition: "transform .2s ease",
+                  transform: showAllSkills ? "rotate(180deg)" : "none",
+                }}
+              />
+            }
+            sx={{
+              textTransform: "none",
+              fontWeight: 600,
+              color: ACCENT,
+              borderRadius: "20px",
+              px: 2,
+              "&:hover": { bgcolor: "#EAF5F4" },
+            }}
+          >
+            {showAllSkills ? "Show less" : `Show all ${skills.length} skills`}
+          </Button>
+        </Box>
+      )}
 
       <Dialog
         open={openDialog}

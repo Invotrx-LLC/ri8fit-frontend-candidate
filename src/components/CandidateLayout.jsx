@@ -32,6 +32,7 @@ import {
   CANDIDATE_ACCESS_TOKEN,
   ACCESS_TOKEN,
 } from "../utils/helper";
+import { clearCandidateAuth } from "../utils/authStorage";
 import candidateApi from "../services/candidateApi";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { Assessment, BusinessCenter, PeopleOutlineOutlined, Person, Person2, Person2Outlined } from "@mui/icons-material";
@@ -106,7 +107,6 @@ function CandidateLayout() {
 
   const [anchorEl, setAnchorEl] = useState(null);
   const menuOpen = Boolean(anchorEl);
-  const [openLogoutMenu, setOpenLogoutMenu] = useState(false);
   const user = safeParse(getItem("candidate_user"));
 
   // Name for the top-right corner — same API the profile header uses
@@ -318,10 +318,12 @@ const currentLabel = currentItem?.label || "Page";
   };
 
   const handleLogout = () => {
-    setOpenLogoutMenu(true)
-    candidateClearLocalStorage()
-    navigate("/for-candidate/login")
-  }
+    clearCandidateAuth();          // removes all candidate auth keys
+    candidateClearLocalStorage();  // existing helper, kept for anything else it clears
+    // Full reload (same as employer side) so Redux + RTK Query cache from the
+    // previous user is wiped. replace() also stops Back from returning here.
+    window.location.replace("/for-candidate/login");
+  };
   return (
     <Box sx={{ minHeight: "100vh", backgroundColor: palette.bg || "#f7f9fa" }}>
       {/* TOP BAR — always full width, never moves, never duplicates */}

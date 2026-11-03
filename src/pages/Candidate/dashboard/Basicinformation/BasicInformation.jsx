@@ -14,9 +14,9 @@ import {
   Grid,
   Divider,
   Paper,
+  Tooltip,
 } from "@mui/material";
 import AddAPhotoIcon from "@mui/icons-material/AddAPhoto";
-import EditIcon from "@mui/icons-material/Edit";
 import PhoneOutlinedIcon from "@mui/icons-material/PhoneOutlined";
 import LocationOnOutlinedIcon from "@mui/icons-material/LocationOnOutlined";
 import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
@@ -34,12 +34,41 @@ import { GridCloseIcon } from "@mui/x-data-grid";
 import { EmailOutlined } from "@mui/icons-material";
 import { palette, fonts } from "../../../../theme/candidateTokens";
 
-// Small reusable row for the info grid
-const InfoRow = ({ icon, children, verified }) => (
-  <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 1.4 }}>
+// Small reusable row for the info grid.
+// verified → teal badge · onVerify (and not verified) → underlined "Verify" link
+const InfoRow = ({ icon, children, verified, onVerify }) => (
+  <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, mb: 1.4, flexWrap: "wrap" }}>
     <Box sx={{ color: palette.teal, display: "flex", flexShrink: 0 }}>{icon}</Box>
     <Typography sx={{ fontSize: 13.5, color: palette.ink }}>{children}</Typography>
-    {verified && <Verified fontSize="small" sx={{ color: palette.teal, ml: 0.3 }} />}
+    {verified ? (
+      <Tooltip title="Verified" arrow>
+        <Verified fontSize="small" sx={{ color: palette.teal, ml: 0.3 }} />
+      </Tooltip>
+    ) : (
+      onVerify && (
+        <Box
+          component="button"
+          type="button"
+          onClick={onVerify}
+          sx={{
+            border: "none",
+            background: "none",
+            p: 0,
+            ml: 0.5,
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: 13,
+            fontWeight: 600,
+            color: palette.amber,
+            textDecoration: "underline",
+            textUnderlineOffset: "3px",
+            "&:hover": { color: palette.teal },
+          }}
+        >
+          Verify
+        </Box>
+      )
+    )}
   </Box>
 );
 
@@ -162,6 +191,22 @@ function BasicInformation({ candidateInfo, completeDetailsApi }) {
       mobile: data.phone_number,
     }));
   }, [candidateDetails]);
+
+  // Phone is verified only when the API says so (email is verified at sign-up).
+  // Until the backend sends one of these flags, the phone shows "Verify".
+  const sd = candidateDetails?.data || {};
+  const isPhoneVerified = !!(
+    sd.phone_verified ??
+    sd.is_phone_verified ??
+    sd.phone_number_verified ??
+    candidate?.phone_verified ??
+    false
+  );
+
+  const handleVerifyPhone = () => {
+    // TODO: connect the phone OTP API (send OTP → enter OTP → verify)
+    console.info("Verify phone clicked for", basicInfo.mobile);
+  };
 
   const handleChange = (e) => {
     setBasicInfo({ ...basicInfo, [e.target.name]: e.target.value });
@@ -324,13 +369,6 @@ function BasicInformation({ candidateInfo, completeDetailsApi }) {
               >
                 {basicInfo.full_name}
               </Typography>
-              <IconButton
-                size="small"
-                onClick={() => setOpen(true)}
-                sx={{ bgcolor: palette.tealDeep, width: 26, height: 26, "&:hover": { bgcolor: palette.teal } }}
-              >
-                <EditIcon sx={{ fontSize: 13, color: "#fff" }} />
-              </IconButton>
             </Box>
             <Typography sx={{ fontSize: 14, color: palette.muted, mt: 0.5 }}>{basicInfo.email}</Typography>
             <Typography sx={{ fontSize: 14, color: palette.muted }}>
@@ -340,7 +378,39 @@ function BasicInformation({ candidateInfo, completeDetailsApi }) {
             </Typography>
           </Box>
 
-          <Box sx={{ textAlign: { xs: "left", sm: "right" }, flexShrink: 0 }}>
+          <Box
+            sx={{
+              textAlign: { xs: "left", sm: "right" },
+              flexShrink: 0,
+              alignSelf: { xs: "stretch", sm: "flex-start" },
+              display: "flex",
+              flexDirection: "column",
+              alignItems: { xs: "flex-start", sm: "flex-end" },
+            }}
+          >
+            {/* Edit Details — opens the Edit Information dialog */}
+            <Box
+              component="button"
+              type="button"
+              onClick={() => setOpen(true)}
+              sx={{
+                border: "none",
+                background: "none",
+                p: 0,
+                mb: 1.5,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontSize: 14,
+                fontWeight: 700,
+                color: palette.teal,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 0.5,
+                "&:hover": { color: palette.tealDeep, textDecoration: "underline", textUnderlineOffset: "3px" },
+              }}
+            >
+              Edit Details
+            </Box>
             <Typography sx={{ fontSize: 11, color: palette.muted, letterSpacing: 0.3 }}>LAST UPDATED</Typography>
             <Typography sx={{ fontFamily: fonts.mono, fontSize: 13, color: palette.ink, mt: 0.25 }}>
               {lastUpdatedDate}
@@ -377,7 +447,11 @@ function BasicInformation({ candidateInfo, completeDetailsApi }) {
             <InfoRow icon={<EmailOutlined sx={{ fontSize: 18 }} />} verified>
               {basicInfo.email || "—"}
             </InfoRow>
-            <InfoRow icon={<PhoneOutlinedIcon sx={{ fontSize: 18 }} />} verified>
+            <InfoRow
+              icon={<PhoneOutlinedIcon sx={{ fontSize: 18 }} />}
+              verified={isPhoneVerified}
+              onVerify={basicInfo.mobile ? handleVerifyPhone : undefined}
+            >
               {basicInfo.mobile || "—"}
             </InfoRow>
             <InfoRow icon={<HourglassEmptyIcon sx={{ fontSize: 18 }} />}>

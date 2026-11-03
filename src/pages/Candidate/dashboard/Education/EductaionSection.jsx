@@ -95,6 +95,7 @@ const EducationPage = ({
   handleNext = () => {},
   onEducationChange,
   completeDetailsApi,
+  onSectionComplete,
 }) => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingIndex, setEditingIndex] = useState(null);
@@ -160,6 +161,13 @@ const EducationPage = ({
     setEducationHistory(sourceEducation);
     if (onEducationChange) onEducationChange(sourceEducation);
   }, [educationSelectionInfo, candidateEducationData, onEducationChange]);
+
+  // Tell the Profile Completion sidebar whether there is any education
+  // (includes entries the resume parser already filled in)
+  useEffect(() => {
+    if (!educationSelectionInfo && candidateEducationData === undefined) return; // still loading
+    onSectionComplete?.("education", educationHistory.length > 0);
+  }, [educationHistory.length, educationSelectionInfo, candidateEducationData, onSectionComplete]);
 
   // Populate form fields when opening dialog
   useEffect(() => {
@@ -332,7 +340,7 @@ const EducationPage = ({
       try {
         await deleteCandidateEducation(edu?.id).unwrap();
         setEducationHistory((prev) => prev.filter((e) => e.id !== edu.id));
-        await completeDetailsApi();
+        await completeDetailsApi?.();
       } catch (err) {
         setError(
           err?.data?.message ||
