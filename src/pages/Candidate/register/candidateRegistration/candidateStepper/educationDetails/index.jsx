@@ -17,6 +17,7 @@ import candidateApi from "../../../../../../services/candidateApi.js";
 import StepPageLayout from "../../../../../../components/StepPageLayout/index.jsx";
 import { candidateSetInitialData, candidateUpdateFormData } from "../../../../../../store/slices/candidateSlice";
 import { candidateGetUserDetails } from "../../../../../../utils/candidateReigister.js";
+import { isFresher } from "../../../../../../utils/workStatus.js";
 
 /* ── Design tokens — shared visual system across Employment / Education / Personal ── */
 const INK = "#1F2937";
@@ -608,6 +609,10 @@ const EducationalPage = ({
 
       {/* Action Buttons */}
       <Box display="flex" justifyContent="space-between" mt={1}>
+        {/* A fresher starts here (Work Experience skipped), so there is no Back */}
+        {isFresher() ? (
+          <Box />
+        ) : (
         <Button
           onClick={handleBack}
           variant="outlined"
@@ -626,6 +631,7 @@ const EducationalPage = ({
         >
           Back
         </Button>
+        )}
         <Button
           variant="contained"
           onClick={handleSaveAndNext}

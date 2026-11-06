@@ -5,7 +5,9 @@ import CheckIcon from "@mui/icons-material/Check";
 import WorkOutlineRoundedIcon from "@mui/icons-material/WorkOutlineRounded";
 import SchoolRoundedIcon from "@mui/icons-material/SchoolRounded";
 import Person2RoundedIcon from "@mui/icons-material/Person2Rounded";
+import SkipNextRoundedIcon from "@mui/icons-material/SkipNextRounded";
 import PropTypes from "prop-types";
+import { isFresher } from "../../utils/workStatus.js";
 
 const PRIMARY      = "#2B6F71";
 const PRIMARY_DARK = "#1E4F50";
@@ -33,8 +35,9 @@ const STEPS = [
   },
 ];
 
-const StepItem = ({ step, index, activeStep, onStepClick, total }) => {
-  const isDone     = index < activeStep;
+const StepItem = ({ step, index, activeStep, onStepClick, total, skipped }) => {
+  // A skipped step (Work Experience for a fresher) is not shown as "done"
+  const isDone     = index < activeStep && !skipped;
   const isActive   = index === activeStep;
   const isPending  = index > activeStep;
   const isLast     = index === total - 1;
@@ -102,7 +105,9 @@ const StepItem = ({ step, index, activeStep, onStepClick, total }) => {
           flexShrink: 0,
         }}
       >
-        {isDone ? (
+        {skipped && !isActive ? (
+          <SkipNextRoundedIcon sx={{ fontSize: "clamp(16px, 1.4vw, 24px)" }} />
+        ) : isDone ? (
           <CheckIcon sx={{ fontSize: "clamp(16px, 1.4vw, 24px)" }} />
         ) : (
           <Icon sx={{ fontSize: "clamp(16px, 1.4vw, 24px)" }} />
@@ -135,7 +140,7 @@ const StepItem = ({ step, index, activeStep, onStepClick, total }) => {
             overflow: "hidden",
           }}
         >
-          {step.sub}
+          {skipped && !isActive ? "Skipped as a fresher — add an internship anytime" : step.sub}
         </Typography>
       </Box>
     </Box>
@@ -143,6 +148,7 @@ const StepItem = ({ step, index, activeStep, onStepClick, total }) => {
 };
 
 const StepperComponent = ({ activeStep, handleStepClick, maxWidth = 1200 }) => {
+  const fresher = isFresher();
   return (
     <Box
   sx={{
@@ -199,6 +205,7 @@ const StepperComponent = ({ activeStep, handleStepClick, maxWidth = 1200 }) => {
             total={STEPS.length}
             activeStep={activeStep}
             onStepClick={handleStepClick}
+            skipped={index === 0 && fresher}
           />
         ))}
       </Box>

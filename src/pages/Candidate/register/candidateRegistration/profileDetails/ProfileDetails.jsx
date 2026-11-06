@@ -1,48 +1,38 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useState } from "react";
 import { useLocation } from "react-router-dom";
 import Box from "@mui/material/Box";
+import { Grid } from "@mui/material";
 import EmploymentDetailsPage from "../candidateStepper/employmentDetails/index.jsx";
 import EducationalPage from "../candidateStepper/educationDetails/index.jsx";
 import PersonalDetails from "../candidateStepper/personalDetails/index.jsx";
-import { AppContext } from "../../../../../AppContext";
-import { Grid } from "@mui/material";
-import StepperComponent from "../../../../../components/Stepper/index.jsx";
+import { getWorkStatus, isFresher } from "../../../../../utils/workStatus.js";
+
+const STEP = { WORK: 0, EDUCATION: 1, PERSONAL: 2 };
 
 export default function CandidateProfileDetails() {
   const location = useLocation();
-  const { setLoading, formData = {}, setFormData } = useContext(AppContext);
-  const [activeStep, setActiveStep] = useState(0);
 
-  const handleNext = () => {
-    console.log(
-      "UserDetails: handleNext called, moving to step",
-      activeStep + 1
-    );
-    setActiveStep((prev) => prev + 1);
-  };
-  const handleBack = () => {
-    console.log(
-      "UserDetails: handleBack called, moving to step",
-      activeStep - 1
-    );
-    setActiveStep((prev) => prev - 1);
-  };
-  const handleStepClick = (index) => {
-    console.log("UserDetails: handleStepClick called with index:", index);
-    setActiveStep(index);
-  };
+  // Work status comes from Profile registration (router state), or from
+  // localStorage after a page refresh.
+  const workStatus = location.state?.workStatus || getWorkStatus();
+  const fresher = isFresher(workStatus);
+
+  // A fresher has no work experience → start on Education
+  const [activeStep, setActiveStep] = useState(fresher ? STEP.EDUCATION : STEP.WORK);
+
+  const handleNext = () => setActiveStep((prev) => Math.min(prev + 1, STEP.PERSONAL));
+
+  // Fresher: Back on Education stays on Education (Work Experience was skipped).
+  // They can still open Work Experience from the step bar to add an internship.
+  const firstStep = fresher ? STEP.EDUCATION : STEP.WORK;
+  const handleBack = () => setActiveStep((prev) => Math.max(prev - 1, firstStep));
+
+  const handleStepClick = (index) => setActiveStep(index);
+
+  const stepProps = { handleNext, handleBack, activeStep, handleStepClick };
 
   return (
-    <Grid
-      container
-      justifyContent="center"
-      // alignItems="center"
-      // sx={{
-      //   // mt: { xs: 0, sm: 15 },
-      //   // minHeight: { xs: "auto", sm: "100vh" },
-      //   // p: { xs: 2, sm: 4 },
-      // }}
-    >
+    <Grid container justifyContent="center">
       <Grid sx={{ display: "flex" }} item xs={12} sm={10} md={8} lg={6}>
         <Box
           sx={{
@@ -53,30 +43,9 @@ export default function CandidateProfileDetails() {
             flex: 2,
           }}
         >
-          {activeStep === 0 && (
-            <EmploymentDetailsPage
-              handleNext={handleNext}
-              handleBack={handleBack}
-              activeStep={activeStep}
-              handleStepClick={handleStepClick}
-            />
-          )}
-          {activeStep === 1 && (
-            <EducationalPage
-              handleNext={handleNext}
-              handleBack={handleBack}
-              activeStep={activeStep}
-              handleStepClick={handleStepClick}
-            />
-          )}
-          {activeStep === 2 && (
-            <PersonalDetails
-              handleNext={handleNext}
-              handleBack={handleBack}
-              activeStep={activeStep}
-              handleStepClick={handleStepClick}
-            />
-          )}
+          {activeStep === STEP.WORK && <EmploymentDetailsPage {...stepProps} />}
+          {activeStep === STEP.EDUCATION && <EducationalPage {...stepProps} />}
+          {activeStep === STEP.PERSONAL && <PersonalDetails {...stepProps} />}
         </Box>
       </Grid>
     </Grid>

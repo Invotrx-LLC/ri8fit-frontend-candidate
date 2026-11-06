@@ -36,6 +36,7 @@ import {
   useGetCandidateResumeStatusQuery,
 } from "../../../../store/api/settings/CandidatePortalApis";
 import { candidateSetResumeParsedData } from "../../../../store/slices/candidateSlice";
+import { saveWorkStatus, getWorkStatus, WORK_STATUS } from "../../../../utils/workStatus.js";
 
 /* ── ResumeLoader keyframes — teal theme ─────────────────────────────────── */
 const pulse = keyframes`
@@ -354,7 +355,10 @@ const CandidateProfile = () => {
       setTaskId(null);
       dispatch(candidateSetResumeParsedData(payload));
       toast.success("Registration successful 🎉");
-      navigate("/for-candidate/profile-details");
+      // A fresher has no work experience — the stepper opens on Education
+      navigate("/for-candidate/profile-details", {
+        state: { workStatus: getWorkStatus() },
+      });
       return;
     }
 
@@ -435,6 +439,8 @@ const CandidateProfile = () => {
 
         position_role: details.position_role || details.sub_function || "",
         availability: details.availability || "",
+        // Saved value from the API, else what was picked earlier in this browser
+        work_status: details.work_status || prev.work_status || getWorkStatus() || "",
       }));
       // NOTE: selectedFunction / selectedSubFunction (Autocomplete objects) are
       // synced below once functionOptions / subFunctionOptions have loaded —
@@ -488,8 +494,12 @@ const CandidateProfile = () => {
     }
   }, [subFunctionOptions, safeFormData.position_role]);
 
+  const isFresherSelected = safeFormData.work_status === WORK_STATUS.FRESHER;
+
   const validate = () => {
     const temp = {};
+    if (!safeFormData.work_status)
+      temp.work_status = "Please select your work status";
     if (!safeFormData.first_name) temp.first_name = "First name is required";
     if (!safeFormData.last_name) temp.last_name = "Last name is required";
     if (!safeFormData.email || !/\S+@\S+\.\S+/.test(safeFormData.email))
@@ -510,7 +520,8 @@ const CandidateProfile = () => {
       if (!safeFormData.position_role)
         temp.position_role = "Position type is required";
     }
-    if (!safeFormData.availability)
+    // A fresher is not asked for availability (sent as Immediate)
+    if (!isFresherSelected && !safeFormData.availability)
       temp.availability = "Availability is required";
     return temp;
   };
@@ -553,8 +564,16 @@ const CandidateProfile = () => {
 
       const fd = new FormData();
       fd.append("phone_number", rawPhone);
-      fd.append("availability", availabilityMap[safeFormData.availability] ?? "");
+      // Fresher → Immediate ("0"); everyone else → what they picked
+      fd.append(
+        "availability",
+        isFresherSelected
+          ? availabilityMap.immediate
+          : availabilityMap[safeFormData.availability] ?? "",
+      );
       fd.append("domain", safeFormData.domain || "");
+      // "experienced" | "fresher" — backend to store it (extra form fields are ignored until then)
+      fd.append("work_status", safeFormData.work_status || "");
       const clinical = isClinicalDomain(safeFormData.domain);
       fd.append("position_role", clinical ? safeFormData.area_of_interest || "" : "");
       fd.append("area_of_interest", clinical ? safeFormData.position_role || "" : "");
@@ -565,6 +584,8 @@ const CandidateProfile = () => {
       const response = await uploadCandidateAdditionalDetails(fd).unwrap();
 
       if (response?.success && response?.data?.task_id) {
+        // Remembered so the stepper knows to skip Work Experience for a fresher
+        saveWorkStatus(safeFormData.work_status);
         setTaskId(response.data.task_id);
       } else {
         toast.error(response?.message || "Submission failed");
@@ -669,12 +690,12 @@ const CandidateProfile = () => {
             <Box sx={{ display: "flex", gap: 2 }}>
               {[
                 {
-                  value: "experienced",
+                  value: WORK_STATUS.EXPERIENCED,
                   label: "Experienced",
                   icon: "💼",
                 },
                 {
-                  value: "fresher",
+                  value: WORK_STATUS.FRESHER,
                   label: "Fresher",
                   icon: "🎓",
                 },
@@ -684,19 +705,31 @@ const CandidateProfile = () => {
                 return (
                   <Box
                     key={item.value}
-                    onClick={() =>
+                    role="button"
+                    aria-pressed={selected}
+                    onClick={() => {
+                      const fresher = item.value === WORK_STATUS.FRESHER;
                       setFormData({
                         ...safeFormData,
                         work_status: item.value,
-                      })
-                    }
+                        // Availability is hidden for a fresher — clear any earlier pick
+                        ...(fresher ? { availability: "" } : {}),
+                      });
+                      setErrors((p) => ({
+                        ...p,
+                        work_status: null,
+                        ...(fresher ? { availability: null } : {}),
+                      }));
+                    }}
                     sx={{
                       flex: 1,
                       cursor: "pointer",
                       borderRadius: "12px",
                       border: selected
                         ? "2px solid #2B7B7E"
-                        : "1px solid #D0D5DD",
+                        : errors.work_status
+                          ? "1px solid #d32f2f"
+                          : "1px solid #D0D5DD",
                       background: selected ? "#F0F9F9" : "#FFFFFF",
                       py: 1,
                       px: 2,
@@ -728,6 +761,18 @@ const CandidateProfile = () => {
                 );
               })}
             </Box>
+
+            {errors.work_status ? (
+              <Typography sx={{ fontSize: "11px", color: "#d32f2f", mt: 0.75 }}>
+                {errors.work_status}
+              </Typography>
+            ) : (
+              safeFormData.work_status === WORK_STATUS.FRESHER && (
+                <Typography sx={{ fontSize: "11.5px", color: "#6B7280", mt: 0.75 }}>
+                  As a fresher, you'll skip the Work Experience step and start with Education.
+                </Typography>
+              )
+            )}
           </FormControl>
 
           {/* ── Personal Information ─────────────────────────────────────── */}
@@ -1009,7 +1054,8 @@ const CandidateProfile = () => {
                 </>
               )}
 
-              {/* Availability — full width, own row */}
+              {/* Availability — full width, own row. Not asked for a fresher. */}
+              {!isFresherSelected && (
               <Box sx={{ gridColumn: "1 / -1" }}>
                 <Typography sx={{ fontSize: "12px", color: "#555", mb: 0.5 }}>
                   Availability
@@ -1039,6 +1085,7 @@ const CandidateProfile = () => {
                   ))}
                 </TextField>
               </Box>
+              )}
             </Box>
           </Box>
 
